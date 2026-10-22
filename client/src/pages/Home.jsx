@@ -1602,7 +1602,7 @@ export default function Home() {
                   DeepTrace
                 </span>
                 <span className="rounded-full border border-cyan-400/40 bg-cyan-500/10 px-2.5 py-0.5 font-mono text-[10px] font-extrabold uppercase tracking-wide text-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.2)]">
-                  v0.5 PRO
+                  v0.7 PRO
                 </span>
               </div>
               <p className="text-xs font-medium text-slate-400">
