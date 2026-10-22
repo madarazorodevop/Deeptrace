@@ -95,7 +95,9 @@ router.post('/analyze', uploadSingle, async (req, res, next) => {
 
   try {
     const aggMode = readAggregationMode(req.query.aggMode)
-    const result = await analyzeMedia(req.file, aggMode)
+    const apiKey = req.headers['x-gemini-api-key'] || req.query.apiKey || req.body?.apiKey || ''
+    const useAi = req.query.useAi === '1' || req.query.useAi === 'true' || Boolean(apiKey)
+    const result = await analyzeMedia(req.file, aggMode, { apiKey, useAi })
     res.status(200).json(result)
   } catch (error) {
     next(error)

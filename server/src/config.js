@@ -87,4 +87,6 @@ export const config = {
   ),
   ffmpegPath: process.env.FFMPEG_PATH ?? 'ffmpeg',
   ffprobePath: process.env.FFPROBE_PATH ?? 'ffprobe',
+  geminiApiKey: process.env.GEMINI_API_KEY ?? '',
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
 }
