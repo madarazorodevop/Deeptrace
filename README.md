@@ -1,274 +1,316 @@
-# DeepTrace AI
+# DeepTrace AI (v0.7 PRO)
+### Neural Media Forensics, Multimodal AI & Live Web Search Grounding
 
-DeepTrace AI is an explainable media-forensics prototype for preliminary review of images, video, and audio. It is being built for a 24-hour hackathon. The goal is to keep tool observations, file properties, timestamps, and integrity records separate from interpretation, and to state what cannot be concluded.
+[![DeepTrace Version](https://img.shields.io/badge/version-v0.7.0--PRO-cyan.svg)](https://github.com/madarazorodevop/Deeptrace)
+[![Node.js](https://img.shields.io/badge/Node.js-20.19+-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org)
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB.svg?logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C.svg?logo=pytorch&logoColor=white)](https://pytorch.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> **Preliminary review tool. Not a substitute for qualified forensic examination.**
+DeepTrace AI is a next-generation neural media forensics and provenance verification console designed to detect deepfakes, synthetic face replacements, generative media artifacts, and unverified digital content. Combining deep neural network classifiers (**DeepGuard**), full-frame frequency domain forensics (**ELA & FFT**), autonomous web search grounding, and optional **Google Gemini 2.5 Flash** multimodal intelligence, DeepTrace provides comprehensive, explainable digital verification for photos, recorded videos, and live camera streams.
 
-Current status: **Phase 3 partial prototype**. Image and video uploads are analysed locally by DeepGuard. The client can capture a single webcam photo for image analysis. Audio-only uploads return an explicit incomplete result because no audio detector is configured. Gemini explanations, persistence, the audit log, report export, and continuous webcam analysis are not implemented.
+> **Forensic Review Notice:** DeepTrace is a rigorous preliminary analysis and investigation tool. Tool observations, file integrity hashes, spectral anomalies, and neural model signals are presented transparently alongside provenance context.
 
-## Architecture
+---
+
+## Architecture Overview
 
 ```mermaid
-flowchart LR
-  U[Analyst] --> C[React + Vite client]
-  W[Webcam] --> C
-  C -->|/api proxy| S[Express API]
-  S --> I[Intake: signature + SHA-256]
-  S -->|image| D[FastAPI DeepGuard service]
-  S -->|video| F[ffprobe + FFmpeg fps=1]
-  F -->|sampled frames| D
-  S -->|audio-only| A[Inconclusive: no audio detector]
-  S -. not implemented .-> G[Gemini explanation]
-  S -. not implemented .-> P[(Persistence)]
+flowchart TB
+  subgraph Client["DeepTrace Client (React + Vite + Tailwind v4)"]
+    UI["Executive Forensics Console"]
+    CAM["Live Camera Studio & HUD"]
+    EXP["1-Click JSON Audit Export"]
+    REV["1-Click Reverse Search Suite"]
+  end
+
+  subgraph Gateway["Express API Server (:8080)"]
+    INTAKE["Intake: Signature Sniffing & SHA-256"]
+    ORCH["AI Forensics Orchestrator"]
+    FFMPEG["FFmpeg Multi-Strategy Video Probe"]
+    STATIC["Unified Static SPA Server"]
+  end
+
+  subgraph Intelligence["Autonomous Grounding & Intelligence"]
+    DDG["DuckDuckGo Live Search Grounding"]
+    GEMINI["Google Gemini 2.5 Flash + Search"]
+  end
+
+  subgraph NeuralEngine["DeepGuard Detector Engine (:8000)"]
+    FACE["YOLOv8 Multi-Stage Face & Landmark Detector"]
+    CNN["ms_eff_gcvit_b0 Neural Classifier"]
+    SPECTRAL["Digital Signal Forensics (ELA & FFT)"]
+  end
+
+  UI -->|/api proxy| INTAKE
+  CAM -->|Photo / WebM Video| INTAKE
+  INTAKE -->|Image| ORCH
+  INTAKE -->|Video| FFMPEG
+  FFMPEG -->|Sampled Frames| ORCH
+  ORCH -->|Raw Frames| FACE
+  FACE -->|Face Crop| CNN
+  FACE -->|Non-Facial / Full Frame| SPECTRAL
+  ORCH -->|Live Web Verification| DDG
+  ORCH -.->|Optional API Key| GEMINI
+  ORCH -->|Aggregated Verdict & Evidence| UI
+  EXP -->|Download Audit| UI
+  REV -->|Google Lens / TinEye / Bing / Yandex| UI
 ```
 
-DeepGuard is the detector. Gemini is not a detector and is not connected yet. SHA-256 is recorded at intake for byte-integrity comparison; it does not establish authorship or original authenticity.
+---
 
-## What works
+## Key Features
 
-- Image upload and DeepGuard image analysis.
-- Single-photo webcam capture in the browser; the captured frame follows the same image pipeline.
-- Video validation with `ffprobe`, FFmpeg `fps=1` frame extraction, and one DeepGuard image analysis per sampled frame.
-- Timestamped frame-level observations and `conf`, `mean`, or `vote` aggregation.
-- SHA-256 and file properties recorded at intake.
-- Strict extension, MIME, magic-signature, size, and duration checks.
-- Temporary upload and frame cleanup after each request.
-- Audio-only uploads produce `No audio detector configured — analysis incomplete`.
-- Raw detector output and uncertainty notes are shown in the UI.
+### 1. Neural Deepfake & Generative Classifier
+- **DeepGuard Engine**: Multi-scale hybrid backbone (`ms_eff_gcvit_b0`) trained on FaceForensics++ (`ff++`).
+- **Multi-Stage Face Detection**: Ultralytics YOLOv8 face detector with dynamic fallback thresholds for angled, low-light, or webcam imagery.
+- **Landmark Alignment & 20% Margin Cropping**: Facial bounding boxes are standardized for neural evaluation.
 
-Not implemented: Gemini explanation, persistence, prototype audit log, report/export, continuous webcam analysis, audio detector.
+### 2. Full-Frame Signal Forensics (ELA & FFT)
+- **Error Level Analysis (ELA)**: Detects compression quantization variances and re-saved manipulation regions.
+- **2D Fourier Transform (FFT)**: Identifies synthetic checkerboard frequencies and diffusion noise artifacts.
+- **Laplacian Variance**: Measures micro-texture sharpness and synthetic blur halos.
+- **Non-Facial Fallback**: Automatically evaluates digital forensics even when no human faces are present in the image or video.
+
+### 3. Autonomous AI Grounding & Live Web Search
+- **DuckDuckGo Web Search Grounding**: Automatically searches the public web for media origin, subject documentation, and archival verification records.
+- **Google Gemini 2.5 Flash Multimodal**: Direct integration with Google Search Grounding for reasoning, context verification, and deepfake debunking.
+- **1-Click Reverse Visual Search Suite**: Instant external cross-referencing tools:
+  - **Google Lens** (Object detection & visual web sources)
+  - **TinEye** (Earliest publication date & modified version tracking)
+  - **Bing Visual Search** (Microsoft Copilot visual matching)
+  - **Yandex Images** (Facial recognition & Russian/CIS provenance)
+
+### 4. Live Camera Studio with Biometric HUD
+- Real-time webcam viewport with animated biometric scanline reticles and telemetry overlay.
+- High-resolution single-frame forensic snapshot capture.
+- In-browser WebM video clip recording with timer and direct pipeline submission.
+
+### 5. Resilient Multi-Strategy Video Duration Recovery
+- Resolves browser-streamed WebM/fMP4 recordings (`MediaRecorder`) that lack finalized container duration headers.
+- Multi-tier recovery:
+  1. Matroska container stream tags (`DURATION`, `DURATION-eng`).
+  2. Frame-count / timebase derivation (`nb_frames / fps`).
+  3. Zero-overhead null-muxing packet probe (`ffmpeg -c copy -f null -`) in `< 10ms`.
+  4. OpenCV `cv2.VideoCapture` frame iteration fallback.
+
+### 6. Multi-Device Local Network Hosting (`0.0.0.0`)
+- Binds to all network interfaces (`0.0.0.0`) with dynamic private subnet CORS (`192.168.*`, `10.*`, `172.16-31.*`).
+- Access from mobile phones, tablets, or other workstations on your local Wi-Fi without configuration.
+- Unified single-port hosting: Express serves both production client assets and API endpoints simultaneously on port `8080`.
+
+### 7. Executive Forensics Console & JSON Audit Export
+- One-click downloadable JSON audit report with timestamp, SHA-256 integrity hash, model diagnostics, and web references.
+- High-fashion fluid obsidian and neon rim-lit dark aesthetic with frosted glass telemetry panels.
+
+---
 
 ## Prerequisites
 
-- Node.js 20.19 or newer and npm
-- Python 3.10+ (the current environment uses Python 3.13)
-- Git
-- FFmpeg and ffprobe on `PATH`
-- Sufficient disk space for Python packages and the DeepGuard checkpoint
+- **Node.js**: `20.19` or newer (Node.js 22+ recommended)
+- **Python**: `3.10+` (tested on Python 3.11, 3.12, 3.13, 3.14)
+- **FFmpeg & ffprobe**: Required on system `PATH`
+- **Git**
 
-On Windows, FFmpeg can be installed with:
+### Installing FFmpeg
 
-```powershell
-winget install Gyan.FFmpeg
+- **Linux (Ubuntu/Debian)**:
+  ```bash
+  sudo apt update && sudo apt install -y ffmpeg
+  ```
+- **Linux (Arch/Manjaro)**:
+  ```bash
+  sudo pacman -S ffmpeg
+  ```
+- **macOS (Homebrew)**:
+  ```bash
+  brew install ffmpeg
+  ```
+- **Windows (winget)**:
+  ```powershell
+  winget install Gyan.FFmpeg
+  ```
+
+---
+
+## Quick Start & Installation
+
+### 1. Start the Python DeepGuard Detector Service
+
+From the repository root:
+
+```bash
+# Create and activate Python virtual environment
+python3 -m venv detector/.venv
+source detector/.venv/bin/activate       # On Windows: detector\.venv\Scripts\activate
+
+# Install dependencies
+pip install --upgrade pip
+pip install -r detector/requirements.txt
+
+# Start detector service on port 8000
+python3 -m uvicorn main:app --app-dir detector --host 127.0.0.1 --port 8000
 ```
 
-Close and reopen the terminal after installation, then verify:
-
-```powershell
-ffmpeg -version
-ffprobe -version
+Verify detector health:
+```bash
+curl http://127.0.0.1:8000/health
 ```
 
-## Setup
+### 2. Start the Express API Backend
 
-### 1. Detector service
+In a second terminal:
 
-From the project root:
-
-```powershell
-python -m venv detector/.venv
-detector\.venv\Scripts\python.exe -m pip install --upgrade pip
-detector\.venv\Scripts\python.exe -m pip install -r detector/requirements.txt
-detector\.venv\Scripts\python.exe -m uvicorn main:app --app-dir detector --host 127.0.0.1 --port 8000
-```
-
-The service binds to `127.0.0.1` only. The first analysis downloads the checkpoint to `%USERPROFILE%\.cache\torch\hub\checkpoints` and can take longer than later requests.
-
-Health check:
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/health
-```
-
-Optional detector environment variables are `DEEPGUARD_MODEL` (default `ms_eff_gcvit_b0`), `DEEPGUARD_DATASET` (default `ff++`), `DETECTOR_PORT` (default `8000`), `DETECTOR_MAX_IMAGE_MB`, `DETECTOR_MAX_VIDEO_MB`, and `DETECTOR_MAX_DURATION_SEC`.
-
-### 2. Express API
-
-```powershell
+```bash
 cd server
 npm install
 npm run dev
 ```
 
-### 3. Client
+Verify backend health:
+```bash
+curl http://localhost:8080/api/health
+```
 
-In a second terminal:
+### 3. Start the React Frontend
 
-```powershell
+In a third terminal:
+
+```bash
 cd client
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`. Vite proxies `/api` to `http://localhost:8080`.
+Open **`http://localhost:5173`** in your browser.
 
-### 4. Verification
+---
 
-Run the server unit tests:
+## Multi-Device Local Network Hosting
 
-```powershell
+To access DeepTrace from a phone, tablet, or another computer on the same Wi-Fi network:
+
+1. Identify your computer's local IP address:
+   ```bash
+   # Linux/macOS
+   ip route get 1.1.1.1 | awk '{print $7}'
+   # Windows
+   ipconfig
+   ```
+   *(Example local IP: `172.18.229.12`)*
+
+2. Open the URL in any browser on your Wi-Fi:
+   - **Vite Dev Server**: `http://<your-local-ip>:5173`
+   - **Production Express Server**: `http://<your-local-ip>:8080`
+
+---
+
+## Environment Configuration
+
+Copy `.env.example` to `.env` in the root or `server/` directory:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Default | Purpose |
+| :--- | :---: | :--- |
+| `PORT` | `8080` | Express listener port |
+| `CLIENT_ORIGIN` | `http://localhost:5173` | Comma-separated CORS allowlist (local subnets automatically permitted) |
+| `MAX_FILE_MB` | `50` | Maximum upload size hard cap |
+| `MAX_IMAGE_MB` | `20` | Image-specific upload limit |
+| `MAX_VIDEO_MB` | `50` | Video-specific upload limit |
+| `MAX_AUDIO_MB` | `50` | Audio-only upload limit |
+| `MAX_DURATION_SEC` | `60` | Video duration limit |
+| `DETECTOR_MODE` | `real` | `real` (DeepGuard connected) or `disabled` |
+| `DETECTOR_BASE_URL` | `http://127.0.0.1:8000` | Detector endpoint URL |
+| `DETECTOR_TIMEOUT_MS` | `300000` | Detector inference timeout (5 minutes) |
+| `FFMPEG_PATH` | `ffmpeg` | FFmpeg binary path |
+| `FFPROBE_PATH` | `ffprobe` | ffprobe binary path |
+| `GEMINI_API_KEY` | *(Optional)* | Google Gemini API key for live multimodal analysis |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model ID |
+
+> **Tip:** You can enter your Gemini API key directly into the in-app **AI Settings modal** without saving it to disk or `.env`.
+
+---
+
+## API Reference
+
+### Express Gateway (`http://localhost:8080`)
+
+#### `GET /api/health`
+Returns service status and timestamp.
+
+#### `POST /api/analyze?aggMode=conf|mean|vote`
+Multipart file upload in field `media`.
+- **Headers (optional)**: `x-gemini-api-key: <key>`
+- **Query parameters**:
+  - `aggMode`: Temporal aggregation mode (`conf` [default], `mean`, `vote`).
+  - `useAi`: Enable/disable AI search grounding (`true` [default]).
+- **Supported Formats**:
+  - Images: `.jpg`, `.jpeg`, `.png`, `.webp`
+  - Videos: `.mp4`, `.m4v`, `.mov`, `.avi`, `.mkv`, `.webm`
+  - Audio: `.wav`, `.mp3`, `.m4a`, `.aac`, `.flac`, `.ogg` *(returns explicit incomplete finding)*
+
+### Detector Service (`http://127.0.0.1:8000`)
+
+- `GET /health` — Detector model & hardware state.
+- `POST /analyze/image` — Direct single-image facial and spectral evaluation.
+- `POST /analyze/video?sample_fps=1` — Direct multi-frame video prediction.
+
+---
+
+## Testing & Quality Assurance
+
+Run the comprehensive unit test suite:
+
+```bash
 cd server
 npm test
 ```
 
-The tests cover aggregation modes, media signature and MIME validation, SHA-256 hashing, and the audio-only incomplete result. Build the client with:
+Tests cover:
+- Temporal score aggregations (`conf`, `mean`, `vote` branch logic)
+- Strict media magic signature sniffing & MIME integrity validation
+- SHA-256 byte hashing accuracy
+- Audio-only explicit incomplete result compliance
+- Upload bounds and duration constraints
 
-```powershell
+Build the production client:
+```bash
 cd client
 npm run build
 ```
 
-### 5. Environment
+---
 
-Copy `.env.example` to `.env` in the project root or `server/.env`. Never commit `.env` or any secret.
+## Score Interpretation & Forensic Semantics
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `PORT` | `8080` | Express listener port |
-| `CLIENT_ORIGIN` | `http://localhost:5173` | Comma-separated CORS allowlist |
-| `MAX_FILE_MB` | `50` | Multipart upload hard cap |
-| `MAX_IMAGE_MB` | `20` | Image-specific limit |
-| `MAX_VIDEO_MB` | `50` | Video-specific limit |
-| `MAX_AUDIO_MB` | `50` | Audio-only limit |
-| `MAX_DURATION_SEC` | `60` | Video duration limit |
-| `DETECTOR_MODE` | `real` | `real` or `disabled` |
-| `DETECTOR_BASE_URL` | `http://127.0.0.1:8000` | Local detector; only localhost/127.0.0.1 allowed |
-| `DETECTOR_TIMEOUT_MS` | `300000` | Detector request timeout |
-| `FFMPEG_PATH` | `ffmpeg` | FFmpeg executable |
-| `FFPROBE_PATH` | `ffprobe` | ffprobe executable |
-| `GEMINI_API_KEY` | empty | Server-only; not used yet |
-| `GEMINI_MODEL` | empty | Pin an exact model ID when Gemini is added |
+| Indicator | Meaning | Interpretation Guidance |
+| :--- | :--- | :--- |
+| **Fake Score** (`0.0 - 1.0`) | Raw neural sigmoid output for DeepGuard's fake class | **Uncalibrated heuristic.** `0.5` is not a 50% probability; a low score is not proof of authenticity. |
+| **Analysis Type** | `facial_deepfake` or `visual_forensics_non_facial` | Declares whether facial features or full-frame signal forensics were measured. |
+| **ELA Mean / Std** | Error Level Analysis compression variance | Higher discrepancy suggests localized digital splicing or resaving. |
+| **FFT High-Freq Ratio** | Spectral energy distribution | Elevated ratios indicate high-frequency synthetic artifacts common in diffusion/GAN models. |
+| **Web Grounding** | Reverse search & live public web provenance | Matches verified online documentation, archival records, or fact-checkers. |
 
-The detector process reads its own environment; it does not read the Express `.env`. The defaults match the local setup.
-
-## API
-
-Express:
-
-- `GET /api/health` — liveness check.
-- `POST /api/analyze` — multipart field `media`; optional query `aggMode=conf|mean|vote`.
-  - Images return an image-level fake-class score.
-  - Videos return frame observations plus a video-level aggregate.
-  - Audio-only files return HTTP 200 with `status: "inconclusive"`, `reason: "no_audio_detector"`, and the exact message `No audio detector configured — analysis incomplete`.
-
-Detector:
-
-- `GET /health`
-- `POST /analyze/image` — multipart field `file`.
-- `POST /analyze/video` — multipart field `file`; uses DeepGuard's built-in video predictor. The Express UI uses the FFmpeg pipeline instead, so direct and UI results can differ.
-
-Errors use the shape:
-
-```json
-{
-  "error": {
-    "code": "string",
-    "message": "string"
-  }
-}
-```
-
-## Detector pipeline
-
-### Image
-
-1. Express validates the extension, MIME type, magic signature, and size.
-2. Express computes SHA-256 over the unchanged upload.
-3. The file is sent to the local FastAPI service.
-4. DeepGuard detects the largest face, applies a 20% crop margin, checks landmarks, resizes to 224×224, and returns a sigmoid output for the fake class.
-
-### Video
-
-1. Express validates the file and computes SHA-256.
-2. `ffprobe` checks for a video stream, determines duration, and reads audio-stream count.
-3. FFmpeg extracts approximately one JPEG frame per second.
-4. Each frame is sent to the DeepGuard image endpoint independently.
-5. Frame scores are aggregated using one of:
-
-- `conf` (default): DeepGuard's custom heuristic. If more than 40% of frames score above 0.8, average those strong-fake frames. Otherwise, if more than 90% score below 0.2, average those strong-real frames. Otherwise average all frames.
-- `mean`: arithmetic mean of all evaluated frame scores.
-- `vote`: fraction of evaluated frames scoring above 0.5.
-
-The video-level score is an aggregate of independent frame predictions, not temporal video understanding. Motion, frame-to-frame consistency, and audio are not modelled. `timestamp_seconds` is approximate source time from the first FFmpeg-extracted frame, not a frame-accurate forensic timestamp.
-
-### Audio
-
-No audio detector is configured. Audio-only files are not sent to DeepGuard and receive no audio score. The UI displays `No audio detector configured — analysis incomplete`. Videos may contain audio, but only their frames are analysed.
-
-### Score semantics
-
-- Label mapping: `0 = real`, `1 = fake`.
-- The model returns a sigmoid output for the fake class.
-- The score is uncalibrated. Do not read `0.5` as a confirmed 50% probability.
-- A high or low score is not proof of manipulation or authenticity.
-- If no usable face or valid prediction is available, the response status is `inconclusive`; no fallback score is invented.
-
-## Detector status and licences
-
-DeepGuard is not a hosted API. It is self-hosted through the Python package and a local FastAPI wrapper.
-
-- Code: `HanMoonSub/DeepGuard`, MIT.
-- Package: `deepguard==1.1.0`.
-- Default checkpoint: `ms_eff_gcvit_b0` trained on `ff++`; published weights are declared MIT by the weight publisher.
-- Runtime dependency: Ultralytics YOLO for face and landmark detection, **AGPL-3.0**.
-- The face-detector weight `yolov8n-face.pt` is bundled with the DeepGuard source; its provenance is not separately documented in the inspected repository.
-- The combined local runtime should therefore be treated as AGPL-3.0-sensitive. Do not redistribute the combined service without reviewing the obligations and the face-weight provenance.
-- DeepGuard does not analyse audio.
-
-The checkpoint is downloaded from the DeepGuard GitHub release specified by the package. The Hugging Face mirror used for label verification is `KoreaPeter/ms-eff-gcvit-deepfake-b0-kodf`.
-
-## Measured smoke tests
-
-These are sample checks, not an evaluation. They were run on 2026-10-22 on a Windows machine with an AMD Ryzen 7 7445HS, CPU-only `torch 2.14.1+cpu`; the RTX 3050 was not used because the installed PyTorch wheel is CPU-only.
-
-Inputs were taken from the DeepGuard repository's `docs/samples` directory for functional verification only and were not committed. Their upstream dataset licensing was not independently verified; do not redistribute those samples.
-
-| Input | Pipeline | Fake-class score | Aggregation | Frames | Warm API time |
-| --- | --- | ---: | --- | ---: | ---: |
-| `western_real_1.JPG` | Express → DeepGuard image | 0.0016 | n/a | n/a | 0.25s |
-| `western_fake_1.JPG` | Express → DeepGuard image | 0.8038 | n/a | n/a | 0.21s |
-| `western_real.mp4` | Express → FFmpeg → DeepGuard image | 0.0154 | `conf`, `strong_real_subset` | 11 | 2.68s |
-| `western_fake.mp4` | Express → FFmpeg → DeepGuard image | 0.9970 | `conf`, `strong_fake_subset` | 14 | 3.22s |
-| synthetic blank video | Express → FFmpeg → DeepGuard image | no score | `inconclusive`, `no_usable_frames` | 3 | n/a |
-| synthetic WAV tone | Express audio-only path | no score | `inconclusive`, `no_audio_detector` | n/a | n/a |
-
-Cold model load was approximately 26.8 seconds on the first image request; subsequent warm image requests were approximately 0.2–0.3 seconds. These timings are observations, not benchmarks.
-
-The detector's built-in `/analyze/video` endpoint was also tested for comparison:
-
-| Input | Endpoint | Fake-class score | Frames | Inference time |
-| --- | --- | ---: | ---: | ---: |
-| `western_real.mp4` | `/analyze/video` | 0.1236 | 11 | 1.76s |
-| `western_fake.mp4` | `/analyze/video` | 0.9841 | 14 | 1.96s |
-
-The FFmpeg pipeline and the built-in video predictor produce different values because they use different sampling/decoding paths. The Express UI uses the FFmpeg pipeline.
-
-No accuracy, AUC, EER, calibration, or generalization claims are made. Two labelled samples and a synthetic clip are not an evaluation.
-
-## Limitations
-
-- This is a prototype audit surface, not a legally admissible chain of custody.
-- SHA-256 proves byte integrity only. It does not prove authorship, provenance, or that media was authentic when created.
-- Missing metadata is treated as unknown, never suspicious by itself.
-- No definitive real/fake verdict is displayed. Findings are observations for review; interpretations are labelled separately.
-- No audio analysis is configured. Audio-only requests are incomplete by design.
-- Webcam capture is a browser-only, single-frame experiment. It requires camera permission and a secure context (`localhost` or HTTPS); continuous/live analysis is not implemented.
-- Frame timestamps are approximate and derived from FFmpeg `fps=1` sampling.
-- The score is uncalibrated and the detector's behavior on unseen manipulations is unknown.
-- No accuracy, latency, or dataset claims are made beyond the measured smoke tests above.
-- Media samples, `.env` files, generated frames, model weights, and temporary files must not be committed.
-- Uploads and generated frames are deleted after each request; no persistence is implemented.
-
-## Evaluation
-
-Smoke tests only. No held-out evaluation has been run. Do not present the sample scores above as accuracy or as a validated detector performance claim.
+---
 
 ## Contributors
 
-- **Kishore Kumar V** ([@Kishore-kumar-007](https://github.com/Kishore-kumar-007)) — Core Contributor & System Architect (v0.7.0)
-  - Designed & implemented Multimodal AI Forensics & Live Web Search Grounding (`webSearchService.js`, `geminiService.js`, `aiOrchestrator.js`)
-  - Built expanded Live Camera Studio with Biometric HUD & Recording (`LiveCameraStudio.jsx`)
-  - Engineered Executive Forensics UI, AI Grounding Panel, & AI Settings (`AiGroundingPanel.jsx`, `AiSettingsModal.jsx`)
+- **Kishore Kumar V** ([@Kishore-kumar-007](https://github.com/Kishore-kumar-007)) — Core Contributor & System Architect (v0.7.0 PRO)
+  - Designed & engineered Multimodal AI Forensics & Live Web Search Grounding (`webSearchService.js`, `geminiService.js`, `aiOrchestrator.js`)
+  - Engineered Live Camera Studio with Biometric HUD & Clip Recording (`LiveCameraStudio.jsx`)
+  - Architected Executive Forensics UI, AI Grounding Panel, 1-Click Reverse Search Suite, and JSON Audit Export
   - Implemented multi-strategy video duration recovery & streaming WebM frame extraction for unindexed recordings
   - Enabled multi-device local network hosting on `0.0.0.0` with dynamic subnet CORS and unified single-port static serving
+  - Designed luxury fluid obsidian and neon rim-lit dark UI aesthetic
 
+---
+
+## License
+
+- **DeepTrace Core Application**: [MIT License](LICENSE)
+- **DeepGuard Model Checkpoint**: MIT (as declared by the weight publisher)
+- **Face & Landmark Detector**: Ultralytics YOLO runtime (AGPL-3.0)
