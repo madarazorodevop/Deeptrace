@@ -262,3 +262,11 @@ No accuracy, AUC, EER, calibration, or generalization claims are made. Two label
 ## Evaluation
 
 Smoke tests only. No held-out evaluation has been run. Do not present the sample scores above as accuracy or as a validated detector performance claim.
+
+## Contributors
+
+- **Kishore Kumar V** ([@Kishore-kumar-007](https://github.com/Kishore-kumar-007)) — Core Contributor & System Architect (v0.4.0)
+  - Designed & implemented Multimodal AI Forensics & Live Web Search Grounding (`webSearchService.js`, `geminiService.js`, `aiOrchestrator.js`)
+  - Built expanded Live Camera Studio with Biometric HUD & Recording (`LiveCameraStudio.jsx`)
+  - Engineered Executive Forensics UI, AI Grounding Panel, & AI Settings (`AiGroundingPanel.jsx`, `AiSettingsModal.jsx`)
+
