@@ -107,118 +107,363 @@ function ScorePanel({ result, kind }) {
   const isVideo = kind === 'video'
   const isAudio = kind === 'audio'
   const analysisType = result.result?.analysis_type
+  const isForensics = analysisType === 'visual_forensics_non_facial'
 
-  // Score semantic coloring
-  let barColor = 'from-emerald-400 to-cyan-400'
-  let labelNote = 'Low manipulation signal (Consistent with Authentic)'
+  // Semantic tier calculation
+  let labelNote = 'Consistent with natural photographic capture'
+  let tierBadge = 'Authentic Baseline'
+  let badgeClasses = 'border-emerald-400/40 bg-emerald-500/10 text-emerald-300'
+  let barGradient = 'from-emerald-400 to-cyan-400'
+  let gaugeGradient = ['#10b981', '#06b6d4']
+  let glowColor = 'rgba(6,182,212,0.35)'
+
   if (hasScore) {
     if (score >= 0.65) {
-      barColor = 'from-amber-400 via-rose-500 to-red-500'
       labelNote = 'High fake / synthetic anomaly indicators'
+      tierBadge = 'Manipulated / Synthetic'
+      badgeClasses = 'border-rose-400/40 bg-rose-500/10 text-rose-300'
+      barGradient = 'from-amber-400 via-rose-500 to-red-500'
+      gaugeGradient = ['#f59e0b', '#f43f5e']
+      glowColor = 'rgba(244,63,94,0.4)'
     } else if (score >= 0.35) {
-      barColor = 'from-cyan-400 to-amber-400'
       labelNote = 'Intermediate / inconclusive range'
-    } else {
-      barColor = 'from-emerald-400 to-cyan-400'
-      labelNote = 'Consistent with natural photographic capture'
+      tierBadge = 'Ambiguous / Inconclusive'
+      badgeClasses = 'border-amber-400/40 bg-amber-500/10 text-amber-300'
+      barGradient = 'from-cyan-400 via-teal-300 to-amber-400'
+      gaugeGradient = ['#06b6d4', '#f59e0b']
+      glowColor = 'rgba(245,158,11,0.35)'
     }
   }
 
+  // Extract extra forensic details
+  const faceConf = result.result?.face_confidence
+  const faceArea = result.result?.face_area_percent
+  const faceBrightness = result.result?.face_brightness_percent
+  const landmarksVerified = result.result?.landmarks_verified
+  const faceBbox = result.result?.face_bbox
+  const detectorModel = result.detector?.model || 'GCViT Transformer'
+  const detectorDevice =
+    result.detector?.device === 'cpu'
+      ? 'CPU Engine'
+      : result.detector?.device || 'CUDA GPU'
+  const marginRatio = result.detector?.margin_ratio
+  const ttaHflip = result.result?.tta_hflip
+
+  // Format bbox if available
+  let bboxLabel = null
+  if (Array.isArray(faceBbox) && faceBbox.length === 4) {
+    const [x1, y1, x2, y2] = faceBbox.map(Math.round)
+    bboxLabel = `${x2 - x1}×${y2 - y1} px [${x1},${y1}]`
+  }
+
   return (
-    <section className="rounded-3xl border border-slate-800/90 bg-gradient-to-b from-slate-900/80 to-slate-950/90 p-6 shadow-2xl backdrop-blur-xl sm:p-8">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <section className="relative overflow-hidden rounded-3xl border border-slate-800/90 bg-gradient-to-b from-slate-900/90 via-slate-950/95 to-slate-950 p-6 shadow-2xl backdrop-blur-xl sm:p-8">
+      {/* Subtle futuristic background ambient glow */}
+      <div
+        className="pointer-events-none absolute -top-24 -left-24 h-72 w-72 rounded-full opacity-20 blur-3xl"
+        style={{ background: gaugeGradient[0] }}
+      />
+      <div
+        className="pointer-events-none absolute -bottom-24 -right-24 h-72 w-72 rounded-full opacity-15 blur-3xl"
+        style={{ background: gaugeGradient[1] }}
+      />
+
+      {/* Header */}
+      <div className="relative flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.25em] text-cyan-400/90">
-            Observation Model Result
-          </p>
-          <h2 className="mt-1.5 text-2xl font-extrabold tracking-tight text-white">
-            {analysisType === 'visual_forensics_non_facial'
-              ? 'Digital Forensics Anomaly Index'
-              : isAudio
-                ? 'Acoustic Voice Synthesis Score'
-                : 'Neural Classifier Fake-Class Score'}
+          <div className="flex items-center gap-2">
+            <span className="inline-block h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
+            <p className="text-xs font-bold uppercase tracking-[0.25em] text-cyan-400/90">
+              Observation Model Result
+            </p>
+          </div>
+          <h2 className="mt-1.5 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
+            Deepfake Score
           </h2>
         </div>
         <StatusPill status={result.status} analysisType={analysisType} />
       </div>
 
-      <div className="mt-6 grid gap-6 sm:grid-cols-[220px_1fr] sm:items-end">
-        <div className="rounded-2xl border border-slate-800/80 bg-slate-950/90 p-5 shadow-inner">
-          <p className="font-mono text-5xl font-black tracking-tight text-white">
-            {hasScore ? score.toFixed(4) : '—'}
-          </p>
-          <p className="mt-2 text-xs font-semibold text-slate-400">
-            {!hasScore
-              ? 'No score produced'
-              : isVideo
-                ? 'Video aggregate'
-                : isAudio
-                  ? 'Acoustic voice score'
-                  : analysisType === 'visual_forensics_non_facial'
-                    ? 'Visual artifact index'
-                    : 'Image face score'}
-          </p>
-          {hasScore ? (
-            <p className="mt-2 text-[11px] font-semibold text-cyan-300">
-              {labelNote}
-            </p>
-          ) : null}
-        </div>
-
-        <div>
-          {isAudio && !result.ai_analysis ? (
-            <p className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-200">
-              {AUDIO_MESSAGE}
-            </p>
-          ) : (
-            <div className="space-y-3.5">
-              <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
-                <span>0.0 (Authentic baseline)</span>
-                <span>0.5 (Threshold)</span>
-                <span>1.0 (Manipulated / Synthetic)</span>
-              </div>
-              <div className="relative h-4 w-full overflow-hidden rounded-full bg-slate-800/90 p-0.5 shadow-inner">
-                <div
-                  className={`h-full rounded-full bg-gradient-to-r ${barColor} shadow-md transition-all duration-700 ease-out`}
-                  style={{ width: `${width}%` }}
-                />
-              </div>
-              <p className="text-xs leading-relaxed text-slate-400">
-                {isAudio
-                  ? 'Acoustic speech frequency and vocoder artifact score.'
-                  : 'Sigmoid fake-class probability output. Observation signal for forensic analyst review.'}
-              </p>
+      {/* Hero Score & Spectrum Section */}
+      <div className="relative mt-6 rounded-2xl border border-slate-800/80 bg-slate-950/70 p-6 shadow-inner">
+        <div className="grid gap-6 lg:grid-cols-[250px_1fr] lg:items-center">
+          {/* Left: Clean Primary Score */}
+          <div className="space-y-2 lg:border-r lg:border-slate-800/80 lg:pr-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${badgeClasses}`}
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-current shadow-[0_0_6px_currentColor]" />
+                {tierBadge}
+              </span>
+              {hasScore && (
+                <span className="rounded-md border border-slate-800 bg-slate-900/80 px-2 py-0.5 font-mono text-[11px] text-slate-400">
+                  {isVideo
+                    ? 'Video'
+                    : isAudio
+                      ? 'Audio'
+                      : isForensics
+                        ? 'Full Frame'
+                        : 'Face Crop'}
+                </span>
+              )}
             </div>
-          )}
+
+            <div className="flex items-baseline gap-2.5 pt-1">
+              <span className="font-mono text-5xl font-black tracking-tight text-white">
+                {hasScore ? score.toFixed(4) : '—'}
+              </span>
+              {hasScore && (
+                <span className="font-mono text-sm font-semibold text-slate-400">
+                  ({(score * 100).toFixed(1)}%)
+                </span>
+              )}
+            </div>
+
+            <p className="text-xs font-medium text-slate-400">
+              {hasScore ? labelNote : 'No probability score evaluated'}
+            </p>
+          </div>
+
+          {/* Right: Clean Calibration Spectrum Bar */}
+          <div className="space-y-3.5 lg:pl-2">
+            {isAudio && !result.ai_analysis ? (
+              <p className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-200">
+                {AUDIO_MESSAGE}
+              </p>
+            ) : (
+              <>
+                {/* Scale Markers */}
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
+                  <span className="flex items-center gap-1.5 text-emerald-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                    0.0 (Authentic baseline)
+                  </span>
+                  <span className="font-bold text-slate-300">
+                    0.5 (Threshold)
+                  </span>
+                  <span className="flex items-center gap-1.5 text-rose-400">
+                    1.0 (Manipulated / Synthetic)
+                    <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+                  </span>
+                </div>
+
+                {/* Smooth Progress Track */}
+                <div className="relative h-4 w-full overflow-hidden rounded-full bg-slate-900 border border-slate-800/90 shadow-inner">
+                  {/* Subtle 0.5 Decision Boundary Marker */}
+                  <div className="absolute top-0 bottom-0 left-1/2 w-0.5 -translate-x-1/2 bg-slate-600/60 z-10" />
+
+                  {/* Luminous Fill Bar */}
+                  <div
+                    className={`relative h-full rounded-full bg-gradient-to-r ${barGradient} shadow-md transition-all duration-700 ease-out`}
+                    style={{ width: `${width}%` }}
+                  />
+                </div>
+
+                {/* Subtext & Delta Margin */}
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+                  <p className="leading-relaxed">
+                    {isAudio
+                      ? 'Acoustic speech frequency and vocoder artifact score.'
+                      : 'Sigmoid fake-class probability output. Observation signal for forensic analyst review.'}
+                  </p>
+                  {hasScore && (
+                    <span className="font-mono text-[11px] font-semibold text-slate-400 shrink-0">
+                      Delta to Threshold:{' '}
+                      <span className={score < 0.5 ? 'text-emerald-400' : 'text-rose-400'}>
+                        {score < 0.5
+                          ? `-${((0.5 - score) * 100).toFixed(1)}% (Authentic bias)`
+                          : `+${((score - 0.5) * 100).toFixed(1)}% (Synthetic bias)`}
+                      </span>
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="mt-6 rounded-2xl border border-slate-800/80 bg-slate-900/50 p-4">
+      {/* Forensic Findings Message Banner */}
+      <div className="relative mt-6 rounded-2xl border border-slate-800/90 bg-slate-950/60 p-4 shadow-sm flex items-start gap-3">
+        <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-cyan-500/10 text-cyan-400">
+          <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+            <path
+              fillRule="evenodd"
+              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </div>
         <p className="text-sm font-medium leading-relaxed text-slate-200">
           {result.message}
         </p>
       </div>
 
-      {hasScore && analysisType === 'facial_deepfake' ? (
-        <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          <Metric
-            label="Face detector confidence"
-            value={formatPercent(result.result.face_confidence)}
-            note="YOLO face detection confidence."
-            highlight
-          />
-          <Metric
-            label="Face frame area"
-            value={formatPercent(result.result.face_area_percent)}
-            note="Portion of media frame occupied by face."
-          />
-          <Metric
-            label="Face brightness"
-            value={formatPercent(result.result.face_brightness_percent)}
-            note="Grayscale mean luminosity of crop."
-          />
+      {/* Advanced Forensic Metric Cards (Face Details & Geometric Integrity) */}
+      {hasScore && (
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {/* 1. Face Detector Confidence */}
+          <div className="group rounded-2xl border border-slate-800/80 bg-slate-950/70 p-4 transition-all hover:border-cyan-500/30 hover:bg-slate-900/40">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">
+                Detector Conf
+              </span>
+              <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-cyan-500/10 text-cyan-400">
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="22" y1="12" x2="18" y2="12" />
+                  <line x1="6" y1="12" x2="2" y2="12" />
+                  <line x1="12" y1="6" x2="12" y2="2" />
+                  <line x1="12" y1="22" x2="12" y2="18" />
+                </svg>
+              </div>
+            </div>
+            <p className="mt-2 text-xl font-extrabold text-cyan-300">
+              {formatPercent(faceConf)}
+            </p>
+            {/* Mini progress bar */}
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-800/80">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-teal-400 to-cyan-400 transition-all duration-500"
+                style={{ width: `${Math.min(100, Math.max(0, faceConf || 0))}%` }}
+              />
+            </div>
+            <p className="mt-2 text-[11px] text-slate-400">
+              YOLO face detection confidence.
+            </p>
+          </div>
+
+          {/* 2. Face Frame Area */}
+          <div className="group rounded-2xl border border-slate-800/80 bg-slate-950/70 p-4 transition-all hover:border-indigo-500/30 hover:bg-slate-900/40">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">
+                Frame Area
+              </span>
+              <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <path d="M21 15l-5-5L5 21" />
+                </svg>
+              </div>
+            </div>
+            <p className="mt-2 text-xl font-extrabold text-slate-100">
+              {formatPercent(faceArea)}
+            </p>
+            {/* Mini progress bar */}
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-800/80">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-cyan-400 transition-all duration-500"
+                style={{ width: `${Math.min(100, Math.max(0, (faceArea || 0) * 4))}%` }}
+              />
+            </div>
+            <p className="mt-2 text-[11px] text-slate-400">
+              Portion of media frame occupied by face.
+            </p>
+          </div>
+
+          {/* 3. Face Brightness / Luminosity */}
+          <div className="group rounded-2xl border border-slate-800/80 bg-slate-950/70 p-4 transition-all hover:border-amber-500/30 hover:bg-slate-900/40">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">
+                Brightness
+              </span>
+              <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-500/10 text-amber-400">
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="5" />
+                  <line x1="12" y1="1" x2="12" y2="3" />
+                  <line x1="12" y1="21" x2="12" y2="23" />
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                  <line x1="1" y1="12" x2="3" y2="12" />
+                  <line x1="21" y1="12" x2="23" y2="12" />
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                </svg>
+              </div>
+            </div>
+            <p className="mt-2 text-xl font-extrabold text-slate-100">
+              {formatPercent(faceBrightness)}
+            </p>
+            {/* Mini progress bar */}
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-800/80">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-amber-400 to-yellow-300 transition-all duration-500"
+                style={{ width: `${Math.min(100, Math.max(0, faceBrightness || 0))}%` }}
+              />
+            </div>
+            <p className="mt-2 text-[11px] text-slate-400">
+              Grayscale mean luminosity of crop.
+            </p>
+          </div>
+
+          {/* 4. 3D Landmark & Geometric Mesh */}
+          <div className="group rounded-2xl border border-slate-800/80 bg-slate-950/70 p-4 transition-all hover:border-emerald-500/30 hover:bg-slate-900/40">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">
+                Landmarks Mesh
+              </span>
+              <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+              </div>
+            </div>
+            <p className={`mt-2 text-xl font-extrabold ${landmarksVerified ? 'text-emerald-300' : isForensics ? 'text-indigo-300' : 'text-slate-200'}`}>
+              {landmarksVerified
+                ? '68-Pt Verified'
+                : isForensics
+                  ? 'Sensor Matrix'
+                  : 'Geometric Check'}
+            </p>
+            {/* Mini status indicator */}
+            <div className="mt-2 flex items-center gap-1.5">
+              <span className={`h-1.5 w-1.5 rounded-full ${landmarksVerified ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]' : 'bg-slate-500'}`} />
+              <span className="text-[11px] font-medium text-slate-400">
+                {landmarksVerified
+                  ? '3D facial alignment passed'
+                  : isForensics
+                    ? 'Full frame analysis'
+                    : 'Affine normalization'}
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">
+              Facial morphing & alignment check.
+            </p>
+          </div>
         </div>
-      ) : null}
+      )}
+
+      {/* Cyber Forensic Telemetry Strip (More Details) */}
+      <div className="mt-5 flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/60 text-[11px] text-slate-400">
+        <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-800 bg-slate-900/60 px-2.5 py-1">
+          <span className="font-semibold text-slate-300">Model:</span> {detectorModel}
+        </span>
+        <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-800 bg-slate-900/60 px-2.5 py-1">
+          <span className="font-semibold text-slate-300">Engine:</span> {detectorDevice}
+        </span>
+        {bboxLabel && (
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-800 bg-slate-900/60 px-2.5 py-1 font-mono">
+            <span className="font-semibold text-slate-300">Crop ROI:</span> {bboxLabel}
+          </span>
+        )}
+        {marginRatio != null && (
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-800 bg-slate-900/60 px-2.5 py-1">
+            <span className="font-semibold text-slate-300">Margin:</span> +{(marginRatio * 100).toFixed(0)}% Padding
+          </span>
+        )}
+        {ttaHflip != null && (
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-800 bg-slate-900/60 px-2.5 py-1">
+            <span className="font-semibold text-slate-300">TTA:</span> {ttaHflip > 0 ? `Dual-Pass (${(ttaHflip * 100).toFixed(0)}%)` : 'Single Pass'}
+          </span>
+        )}
+        {isVideo && result.result?.sampling && (
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-800 bg-slate-900/60 px-2.5 py-1">
+            <span className="font-semibold text-slate-300">Frames:</span> {result.result.sampling.num_detected ?? 0} / {result.result.sampling.num_sampled ?? 0} Sampled
+          </span>
+        )}
+      </div>
     </section>
   )
 }
@@ -227,49 +472,247 @@ function ForensicsPanel({ result }) {
   const forensics = result.result?.forensics
   if (!forensics) return null
 
+  const isLowEla = forensics.ela_mean <= 1.5
+  const isNaturalFft = forensics.fft_high_freq_ratio <= 1.35
+  const isSharp = forensics.sharpness_variance >= 60
+  const isLowSynthetic = forensics.synthetic_artifact_score <= 0.35
+
   return (
-    <section className="rounded-3xl border border-indigo-500/30 bg-gradient-to-b from-slate-900/60 to-slate-950/80 p-6 shadow-xl backdrop-blur-xl sm:p-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section className="relative overflow-hidden rounded-3xl border border-indigo-500/30 bg-gradient-to-b from-slate-900/90 via-slate-950/95 to-slate-950 p-6 shadow-2xl backdrop-blur-xl sm:p-8">
+      {/* Ambient background glow */}
+      <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-indigo-500/10 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-cyan-500/10 blur-3xl" />
+
+      {/* Header */}
+      <div className="relative flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.25em] text-indigo-400">
-            Explainable Digital Forensics
-          </p>
-          <h2 className="mt-1 text-xl font-extrabold text-slate-100">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]" />
+            </span>
+            <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-indigo-400">
+              Explainable Digital Forensics
+            </p>
+          </div>
+          <h2 className="mt-1 text-2xl font-black tracking-tight text-white sm:text-3xl">
             Signal & Spectral Artifact Diagnostics
           </h2>
         </div>
-        <span className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-3.5 py-1 text-xs font-semibold text-indigo-300">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/30 bg-indigo-500/10 px-3.5 py-1 text-xs font-semibold text-indigo-300">
+          <span className="h-1.5 w-1.5 rounded-full bg-indigo-400" />
           Fourier & ELA Metrics
         </span>
       </div>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric
-          label="Error Level Analysis (ELA)"
-          value={`${forensics.ela_mean.toFixed(2)} μ`}
-          note={`Std dev: ${forensics.ela_std.toFixed(2)}. Compression anomaly difference.`}
-        />
-        <Metric
-          label="FFT High-Freq Ratio"
-          value={forensics.fft_high_freq_ratio.toFixed(2)}
-          note="High-frequency power spikes typical in GAN/diffusion generation."
-        />
-        <Metric
-          label="Texture / Laplacian Sharpness"
-          value={forensics.sharpness_variance.toFixed(0)}
-          note="Edge variance indicating camera focus vs synthetic smoothing."
-        />
-        <Metric
-          label="Synthetic Signal Index"
-          value={forensics.synthetic_artifact_score.toFixed(4)}
-          note="Composite heuristic from spectral & compression artifacts."
-          highlight
-        />
+      {/* 4 Professional Forensic Telemetry Cards */}
+      <div className="relative mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Card 1: Error Level Analysis */}
+        <div className="group rounded-2xl border border-slate-800/80 bg-slate-950/70 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-400/40 hover:bg-slate-900/60 hover:shadow-[0_8px_20px_rgba(99,102,241,0.12)]">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+              Error Level (ELA)
+            </span>
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-500/10 border border-indigo-400/20 text-indigo-300">
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                <polyline points="2 17 12 22 22 17" />
+                <polyline points="2 12 12 17 22 12" />
+              </svg>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-baseline gap-1.5">
+            <span className="font-mono text-3xl font-black tracking-tight text-white">
+              {forensics.ela_mean.toFixed(2)}
+            </span>
+            <span className="text-xs font-semibold text-slate-400">μ</span>
+          </div>
+
+          <div className="mt-2.5">
+            <span
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${
+                isLowEla
+                  ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-300'
+                  : 'border-amber-400/30 bg-amber-500/10 text-amber-300'
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${isLowEla ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+              {isLowEla ? 'Uniform Compression' : 'Compression Shift'}
+            </span>
+          </div>
+
+          <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-900 border border-slate-800">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                isLowEla ? 'bg-gradient-to-r from-emerald-400 to-teal-400' : 'bg-gradient-to-r from-amber-400 to-rose-400'
+              }`}
+              style={{ width: `${Math.min(100, Math.max(8, (forensics.ela_mean / 2.5) * 100))}%` }}
+            />
+          </div>
+
+          <p className="mt-2 text-xs leading-relaxed text-slate-400">
+            Std dev: ±{forensics.ela_std.toFixed(2)}. Recompression error rate.
+          </p>
+        </div>
+
+        {/* Card 2: FFT High-Frequency Ratio */}
+        <div className="group rounded-2xl border border-slate-800/80 bg-slate-950/70 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-400/40 hover:bg-slate-900/60 hover:shadow-[0_8px_20px_rgba(99,102,241,0.12)]">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+              FFT High-Freq
+            </span>
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-500/10 border border-indigo-400/20 text-indigo-300">
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-baseline gap-1.5">
+            <span className="font-mono text-3xl font-black tracking-tight text-white">
+              {forensics.fft_high_freq_ratio.toFixed(2)}
+            </span>
+          </div>
+
+          <div className="mt-2.5">
+            <span
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${
+                isNaturalFft
+                  ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-300'
+                  : 'border-rose-400/30 bg-rose-500/10 text-rose-300'
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${isNaturalFft ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+              {isNaturalFft ? 'Natural Falloff' : 'High Latent Spikes'}
+            </span>
+          </div>
+
+          <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-900 border border-slate-800">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                isNaturalFft ? 'bg-gradient-to-r from-teal-400 to-indigo-400' : 'bg-gradient-to-r from-amber-400 to-rose-400'
+              }`}
+              style={{ width: `${Math.min(100, Math.max(8, (forensics.fft_high_freq_ratio / 2.0) * 100))}%` }}
+            />
+          </div>
+
+          <p className="mt-2 text-xs leading-relaxed text-slate-400">
+            High-frequency spectral power vs synthetic generation spikes.
+          </p>
+        </div>
+
+        {/* Card 3: Laplacian Sharpness */}
+        <div className="group rounded-2xl border border-slate-800/80 bg-slate-950/70 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-400/40 hover:bg-slate-900/60 hover:shadow-[0_8px_20px_rgba(99,102,241,0.12)]">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+              Texture Sharpness
+            </span>
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-500/10 border border-indigo-400/20 text-indigo-300">
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="14.31" y1="8" x2="20.05" y2="17.94" />
+                <line x1="9.69" y1="8" x2="21.17" y2="8" />
+                <line x1="7.38" y1="12" x2="13.12" y2="2.06" />
+                <line x1="9.69" y1="16" x2="3.95" y2="6.06" />
+                <line x1="14.31" y1="16" x2="2.83" y2="16" />
+                <line x1="16.62" y1="12" x2="10.88" y2="21.94" />
+              </svg>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-baseline gap-1.5">
+            <span className="font-mono text-3xl font-black tracking-tight text-white">
+              {forensics.sharpness_variance.toFixed(0)}
+            </span>
+            <span className="text-xs font-semibold text-slate-400">var</span>
+          </div>
+
+          <div className="mt-2.5">
+            <span
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${
+                isSharp
+                  ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-300'
+                  : 'border-amber-400/30 bg-amber-500/10 text-amber-300'
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${isSharp ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+              {isSharp ? 'Optical Focus' : 'Diffusion Smoothing'}
+            </span>
+          </div>
+
+          <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-900 border border-slate-800">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                isSharp ? 'bg-gradient-to-r from-cyan-400 to-indigo-400' : 'bg-gradient-to-r from-amber-400 to-yellow-400'
+              }`}
+              style={{ width: `${Math.min(100, Math.max(8, (forensics.sharpness_variance / 150) * 100))}%` }}
+            />
+          </div>
+
+          <p className="mt-2 text-xs leading-relaxed text-slate-400">
+            Laplacian edge variance indicating camera lens focus.
+          </p>
+        </div>
+
+        {/* Card 4: Synthetic Signal Index */}
+        <div className="group rounded-2xl border border-slate-800/80 bg-slate-950/70 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-cyan-400/50 hover:bg-slate-900/60 hover:shadow-[0_8px_20px_rgba(34,211,238,0.14)]">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-400">
+              Synthetic Index
+            </span>
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/10 border border-cyan-400/30 text-cyan-300">
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-baseline gap-1.5">
+            <span className="font-mono text-3xl font-black tracking-tight text-cyan-300">
+              {forensics.synthetic_artifact_score.toFixed(4)}
+            </span>
+          </div>
+
+          <div className="mt-2.5">
+            <span
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${
+                isLowSynthetic
+                  ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-300'
+                  : 'border-rose-400/30 bg-rose-500/10 text-rose-300'
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${isLowSynthetic ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+              {isLowSynthetic ? 'Authentic Baseline' : 'Elevated Anomaly'}
+            </span>
+          </div>
+
+          <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-900 border border-slate-800">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                isLowSynthetic ? 'bg-gradient-to-r from-emerald-400 to-cyan-400' : 'bg-gradient-to-r from-amber-400 to-rose-500'
+              }`}
+              style={{ width: `${Math.min(100, Math.max(8, forensics.synthetic_artifact_score * 100))}%` }}
+            />
+          </div>
+
+          <p className="mt-2 text-xs leading-relaxed text-slate-400">
+            Composite heuristic from spectral & ELA compression signals.
+          </p>
+        </div>
       </div>
 
-      <p className="mt-4 text-xs leading-relaxed text-slate-400">
-        Error Level Analysis highlights compression inconsistencies between modified and original image areas. 2D Fast Fourier Transform (FFT) reveals non-optical periodic grid artifacts common to generative synthesis pipelines.
-      </p>
+      {/* Styled Footnote */}
+      <div className="relative mt-6 flex items-start gap-3 rounded-2xl border border-slate-800/80 bg-slate-950/60 p-4 shadow-sm">
+        <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-indigo-400">
+          <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+          </svg>
+        </div>
+        <p className="text-xs font-medium leading-relaxed text-slate-300">
+          Error Level Analysis (ELA) verifies compression boundary consistency across image zones. 2D Fast Fourier Transform (FFT) inspects frequency space for latent grid artifacts common in GAN and diffusion generation.
+        </p>
+      </div>
     </section>
   )
 }
@@ -382,68 +825,260 @@ function FileAndDetectorPanel({ result }) {
 
   return (
     <section className="grid gap-6 lg:grid-cols-2">
-      <div className="rounded-3xl border border-slate-800/90 bg-slate-900/50 p-6 backdrop-blur-xl sm:p-8">
-        <p className="text-xs font-bold uppercase tracking-[0.25em] text-slate-400">
-          Cryptographic Integrity
-        </p>
-        <h3 className="mt-1 text-lg font-bold text-slate-100">Intake Fingerprint</h3>
-        <dl className="mt-4 space-y-3.5 text-sm">
-          <div className="flex justify-between border-b border-slate-800/80 pb-2">
-            <dt className="text-slate-500 font-medium">File Name</dt>
-            <dd className="font-mono text-slate-200">{file?.original_name ?? file?.filename}</dd>
+      {/* Left Card: Cryptographic Integrity */}
+      <div className="relative overflow-hidden rounded-3xl border border-slate-800/90 bg-gradient-to-b from-slate-900/90 via-slate-950/95 to-slate-950 p-6 backdrop-blur-xl sm:p-7 shadow-xl">
+        <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee]" />
+              <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-400/90">
+                Cryptographic Integrity
+              </p>
+            </div>
+            <h3 className="mt-1 text-xl font-black tracking-tight text-white">
+              Intake Fingerprint
+            </h3>
           </div>
-          <div className="flex justify-between border-b border-slate-800/80 pb-2">
-            <dt className="text-slate-500 font-medium">File Size</dt>
-            <dd className="text-slate-200 font-semibold">{formatBytes(file?.bytes)}</dd>
+          <span className="rounded-full border border-slate-800 bg-slate-900/80 px-2.5 py-1 text-[11px] font-mono text-slate-300">
+            SHA-256 Verified
+          </span>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center justify-between rounded-xl border border-slate-800/60 bg-slate-950/60 px-4 py-2.5 text-xs">
+            <span className="font-medium text-slate-400">File Name</span>
+            <span
+              className="max-w-[220px] truncate font-mono font-bold text-slate-200"
+              title={file?.original_name ?? file?.filename}
+            >
+              {file?.original_name ?? file?.filename}
+            </span>
           </div>
-          <div className="flex justify-between border-b border-slate-800/80 pb-2">
-            <dt className="text-slate-500 font-medium">Detected Format</dt>
-            <dd className="font-mono text-cyan-300">{file?.detected_type ?? file?.content_type}</dd>
+
+          <div className="flex items-center justify-between rounded-xl border border-slate-800/60 bg-slate-950/60 px-4 py-2.5 text-xs">
+            <span className="font-medium text-slate-400">File Size</span>
+            <span className="font-mono font-bold text-slate-200">
+              {formatBytes(file?.bytes)}
+            </span>
           </div>
+
+          <div className="flex items-center justify-between rounded-xl border border-slate-800/60 bg-slate-950/60 px-4 py-2.5 text-xs">
+            <span className="font-medium text-slate-400">Detected Format</span>
+            <span className="rounded-md border border-cyan-400/30 bg-cyan-500/10 px-2 py-0.5 font-mono text-[11px] font-bold text-cyan-300">
+              {file?.detected_type ?? file?.content_type}
+            </span>
+          </div>
+
           <div className="pt-1">
-            <dt className="text-slate-500 font-medium">SHA-256 Checksum</dt>
-            <dd className="mt-2 flex items-center gap-2 rounded-xl bg-slate-950 p-3 font-mono text-xs text-cyan-200 shadow-inner">
-              <span className="truncate">{file?.sha256}</span>
+            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 mb-1.5">
+              <span>SHA-256 Checksum</span>
+              <span className="text-[10px] uppercase font-mono text-slate-500">
+                256-bit Digest
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-2.5 rounded-xl border border-slate-800/80 bg-slate-950 p-2.5 shadow-inner">
+              <span className="truncate font-mono text-xs text-cyan-200 select-all">
+                {file?.sha256}
+              </span>
               <button
                 type="button"
                 onClick={copyDigest}
-                className="shrink-0 rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] uppercase font-bold text-slate-300 hover:border-cyan-400 hover:text-white"
+                className="shrink-0 flex items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-slate-200 hover:border-cyan-400 hover:text-white transition-colors"
               >
                 {copied ? 'Copied ✓' : 'Copy'}
               </button>
-            </dd>
+            </div>
           </div>
-        </dl>
+        </div>
       </div>
 
-      <div className="rounded-3xl border border-slate-800/90 bg-slate-900/50 p-6 backdrop-blur-xl sm:p-8">
-        <p className="text-xs font-bold uppercase tracking-[0.25em] text-slate-400">
-          Forensic Engine Metadata
-        </p>
-        <h3 className="mt-1 text-lg font-bold text-slate-100">Engine Configuration</h3>
+      {/* Right Card: Forensic Engine Metadata */}
+      <div className="relative overflow-hidden rounded-3xl border border-slate-800/90 bg-gradient-to-b from-slate-900/90 via-slate-950/95 to-slate-950 p-6 backdrop-blur-xl sm:p-7 shadow-xl">
+        <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 shadow-[0_0_6px_#818cf8]" />
+              <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-indigo-400">
+                Forensic Engine Metadata
+              </p>
+            </div>
+            <h3 className="mt-1 text-xl font-black tracking-tight text-white">
+              Engine Configuration
+            </h3>
+          </div>
+          <span className="rounded-full border border-slate-800 bg-slate-900/80 px-2.5 py-1 text-[11px] font-mono text-slate-300">
+            DeepGuard Pipeline
+          </span>
+        </div>
+
         {detector ? (
-          <dl className="mt-4 space-y-3.5 text-sm">
-            <div className="flex justify-between border-b border-slate-800/80 pb-2">
-              <dt className="text-slate-500 font-medium">Neural Architecture</dt>
-              <dd className="font-mono font-bold text-slate-200">{detector.model || 'Multimodal AI'}</dd>
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center justify-between rounded-xl border border-slate-800/60 bg-slate-950/60 px-4 py-2.5 text-xs">
+              <span className="font-medium text-slate-400">
+                Neural Architecture
+              </span>
+              <span className="font-mono font-bold text-slate-200">
+                {detector.model || 'Multimodal AI'}
+              </span>
             </div>
-            <div className="flex justify-between border-b border-slate-800/80 pb-2">
-              <dt className="text-slate-500 font-medium">Training Reference</dt>
-              <dd className="font-mono text-slate-200">{detector.dataset ? `${detector.dataset} (FaceForensics++)` : 'Web Provenance & GenAI Artifacts'}</dd>
+
+            <div className="flex items-center justify-between rounded-xl border border-slate-800/60 bg-slate-950/60 px-4 py-2.5 text-xs">
+              <span className="font-medium text-slate-400">
+                Training Reference
+              </span>
+              <span className="font-mono font-bold text-slate-200">
+                {detector.dataset
+                  ? `${detector.dataset} (FaceForensics++)`
+                  : 'Web Provenance & GenAI Artifacts'}
+              </span>
             </div>
-            <div className="flex justify-between border-b border-slate-800/80 pb-2">
-              <dt className="text-slate-500 font-medium">Inference Hardware</dt>
-              <dd className="font-mono text-cyan-300 uppercase font-bold">{detector.device || 'CPU'}</dd>
+
+            <div className="flex items-center justify-between rounded-xl border border-slate-800/60 bg-slate-950/60 px-4 py-2.5 text-xs">
+              <span className="font-medium text-slate-400">
+                Inference Hardware
+              </span>
+              <span className="rounded-md border border-cyan-400/30 bg-cyan-500/10 px-2 py-0.5 font-mono text-[11px] font-bold text-cyan-300 uppercase">
+                {detector.device || 'CPU'}
+              </span>
             </div>
-            <div className="flex justify-between pt-1">
-              <dt className="text-slate-500 font-medium">Grounding Engine</dt>
-              <dd className="text-xs font-semibold text-indigo-300">Google Search & Web Registry Grounding</dd>
+
+            <div className="flex items-center justify-between rounded-xl border border-slate-800/60 bg-slate-950/60 px-4 py-2.5 text-xs">
+              <span className="font-medium text-slate-400">
+                Grounding Engine
+              </span>
+              <span className="text-xs font-semibold text-indigo-300">
+                Google Search & Web Registry Grounding
+              </span>
             </div>
-          </dl>
+          </div>
         ) : (
-          <p className="mt-4 text-sm text-slate-500">Detector metadata is currently unavailable.</p>
+          <p className="mt-4 text-sm text-slate-500">
+            Detector metadata is currently unavailable.
+          </p>
         )}
       </div>
+    </section>
+  )
+}
+
+function JsonAuditPanel({ result }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const jsonString = useMemo(() => JSON.stringify(result, null, 2), [result])
+  const byteSize = useMemo(() => new Blob([jsonString]).size, [jsonString])
+
+  function handleCopy() {
+    navigator.clipboard.writeText(jsonString)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  function handleDownload() {
+    const baseName =
+      result.file?.original_name || result.file?.filename || 'report'
+    const filename = `deeptrace-audit-${baseName}.json`.replace(
+      /[^a-zA-Z0-9._-]/g,
+      '_'
+    )
+    const blob = new Blob([jsonString], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <section className="relative overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/40 p-5 sm:p-6 transition-all duration-300 shadow-xl">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* Left: Collapsible Header Trigger */}
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="group flex items-center gap-3 text-left focus:outline-none"
+        >
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-800/70 text-slate-400 group-hover:border-cyan-400/50 group-hover:text-cyan-300 transition-colors shadow-inner">
+            <svg
+              className={`h-4 w-4 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+          </div>
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-[0.22em] text-slate-300 group-hover:text-cyan-300 transition-colors">
+              Raw JSON Forensic Audit Payload
+            </h4>
+            <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+              Full cryptographic & forensic schema ({formatBytes(byteSize)})
+            </p>
+          </div>
+        </button>
+
+        {/* Right Corner: Download & Copy Buttons */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 rounded-xl border border-slate-700/80 bg-slate-800/70 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-slate-600 hover:bg-slate-800 hover:text-white transition-all shadow-sm"
+          >
+            <svg
+              className="h-3.5 w-3.5 text-slate-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+              />
+            </svg>
+            <span>{copied ? 'Copied ✓' : 'Copy'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="flex items-center gap-1.5 rounded-xl border border-cyan-400/50 bg-cyan-500/10 px-3.5 py-1.5 text-xs font-bold text-cyan-300 hover:bg-cyan-500/20 hover:border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.15)] transition-all"
+          >
+            <svg
+              className="h-3.5 w-3.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+              />
+            </svg>
+            <span>Download JSON</span>
+          </button>
+        </div>
+      </div>
+
+      {isOpen && (
+        <div className="mt-4">
+          <pre className="max-h-96 overflow-auto rounded-2xl border border-slate-800/90 bg-slate-950 p-5 font-mono text-xs leading-relaxed text-slate-300 shadow-inner selection:bg-cyan-500/30 selection:text-cyan-200">
+            {jsonString}
+          </pre>
+        </div>
+      )}
     </section>
   )
 }
@@ -459,10 +1094,19 @@ function VideoContextPanel({ result }) {
         Media Container & Stream Details
       </p>
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric label="Duration" value={probe ? `${probe.duration_seconds.toFixed(2)}s` : 'Unknown'} />
-        <Metric label="Resolution" value={probe ? `${probe.width ?? '?'} × ${probe.height ?? '?'}` : 'Unknown'} />
+        <Metric
+          label="Duration"
+          value={probe ? `${probe.duration_seconds.toFixed(2)}s` : 'Unknown'}
+        />
+        <Metric
+          label="Resolution"
+          value={probe ? `${probe.width ?? '?'} × ${probe.height ?? '?'}` : 'Unknown'}
+        />
         <Metric label="Video Codec" value={probe?.codec ?? 'Unknown'} highlight />
-        <Metric label="Audio Streams" value={probe ? String(probe.audio_stream_count ?? 0) : '0'} />
+        <Metric
+          label="Audio Streams"
+          value={probe ? String(probe.audio_stream_count ?? 0) : '0'}
+        />
       </div>
       {sampling ? (
         <p className="mt-4 text-xs leading-relaxed text-slate-400">
@@ -501,14 +1145,7 @@ function ResultView({ result }) {
       {isVideo ? <FramesPanel result={result} /> : null}
 
       {/* 8. Raw JSON Forensic Audit Payload */}
-      <details className="rounded-3xl border border-slate-800/80 bg-slate-900/40 p-6 transition">
-        <summary className="cursor-pointer text-xs font-bold uppercase tracking-[0.25em] text-slate-400 hover:text-cyan-300">
-          Inspect Raw JSON Forensic Audit Payload
-        </summary>
-        <pre className="mt-4 max-h-96 overflow-auto rounded-2xl bg-slate-950 p-5 font-mono text-xs leading-relaxed text-slate-300 shadow-inner">
-          {JSON.stringify(result, null, 2)}
-        </pre>
-      </details>
+      <JsonAuditPanel result={result} />
     </div>
   )
 }
@@ -913,19 +1550,64 @@ export default function Home() {
         {/* Top Executive Navigation Bar */}
         <header className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-slate-800/80 bg-slate-900/40 p-4 shadow-xl backdrop-blur-2xl">
           <div className="flex items-center gap-3.5">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-400/40 bg-gradient-to-br from-cyan-400/20 to-indigo-600/30 shadow-[0_0_20px_rgba(34,211,238,0.25)]">
-              <span className="h-3 w-3 rounded-sm bg-cyan-300 shadow-[0_0_8px_#22d3ee]" />
+            {/* Custom DeepTrace Hexagonal Biometric Neural Logo */}
+            <div className="relative group flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-cyan-400/40 bg-gradient-to-br from-slate-900 via-slate-950 to-indigo-950 p-2.5 shadow-[0_0_25px_rgba(34,211,238,0.25)] transition-all duration-300 hover:border-cyan-300 hover:shadow-[0_0_30px_rgba(34,211,238,0.4)]">
+              <svg viewBox="0 0 36 36" fill="none" className="h-full w-full">
+                <defs>
+                  <linearGradient id="dtShieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#22d3ee" />
+                    <stop offset="50%" stopColor="#6366f1" />
+                    <stop offset="100%" stopColor="#a855f7" />
+                  </linearGradient>
+                  <linearGradient id="dtCoreGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#67e8f9" />
+                    <stop offset="100%" stopColor="#3b82f6" />
+                  </linearGradient>
+                </defs>
+                {/* Hexagonal Biometric Shield Frame */}
+                <path
+                  d="M18 3L30 10V22L18 29L6 22V10L18 3Z"
+                  stroke="url(#dtShieldGrad)"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                {/* Interlocking Forensic Trace Matrix (D + T vectors) */}
+                <path
+                  d="M18 8V24M11 12.5L18 8L25 12.5M11 20L18 24.5L25 20"
+                  stroke="url(#dtShieldGrad)"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity="0.85"
+                />
+                {/* Central Luminous Quantum Sensor */}
+                <circle
+                  cx="18"
+                  cy="16"
+                  r="3"
+                  fill="url(#dtCoreGrad)"
+                  className="animate-pulse"
+                />
+                {/* Calibrated Optical Focus Ticks */}
+                <circle cx="18" cy="4" r="1.2" fill="#22d3ee" />
+                <circle cx="29.5" cy="10.5" r="1.2" fill="#818cf8" />
+                <circle cx="6.5" cy="10.5" r="1.2" fill="#22d3ee" />
+              </svg>
             </div>
+
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-base font-black tracking-[0.2em] text-white">
-                  DEEPTRACE
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl font-black tracking-tight bg-gradient-to-r from-white via-slate-100 to-cyan-300 bg-clip-text text-transparent">
+                  DeepTrace
                 </span>
-                <span className="rounded-md border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 font-mono text-[10px] font-bold text-cyan-300">
-                  v0.4 PRO
+                <span className="rounded-full border border-cyan-400/40 bg-cyan-500/10 px-2.5 py-0.5 font-mono text-[10px] font-extrabold uppercase tracking-wide text-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.2)]">
+                  v0.5 PRO
                 </span>
               </div>
-              <p className="text-xs text-slate-400">Multimodal Media Forensics & Live Web Grounding</p>
+              <p className="text-xs font-medium text-slate-400">
+                Neural Media Forensics & Live Web Grounding
+              </p>
             </div>
           </div>
 
@@ -943,12 +1625,15 @@ export default function Home() {
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
               </svg>
-              <span>{isCameraOpen ? 'Close Camera Studio' : '📷 Open Camera Studio'}</span>
+              <span>{isCameraOpen ? 'Close Camera Studio' : 'Open Camera Studio'}</span>
             </button>
 
             {/* AI Grounding Status Indicator */}
             <div className="flex items-center gap-2 rounded-2xl border border-indigo-400/30 bg-indigo-500/10 px-3.5 py-2 text-xs font-semibold text-indigo-200">
-              <span className="h-2 w-2 animate-ping rounded-full bg-cyan-400" />
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400 shadow-[0_0_6px_#22d3ee]" />
+              </span>
               <span>{geminiApiKey ? 'Gemini 2.5 + Grounding' : 'AI & Web Search Active'}</span>
             </div>
 
@@ -958,8 +1643,11 @@ export default function Home() {
               onClick={() => setIsAiSettingsOpen(true)}
               className="flex items-center gap-1.5 rounded-2xl border border-slate-700 bg-slate-800/80 px-3.5 py-2 text-xs font-bold text-slate-200 transition hover:border-cyan-400 hover:text-white"
             >
-              <span>⚙️</span>
-              <span>AI Engine Settings</span>
+              <svg className="h-3.5 w-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+              <span>AI Settings</span>
             </button>
           </div>
         </header>

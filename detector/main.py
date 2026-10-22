@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -507,23 +508,91 @@ def _probe_video(path: str) -> dict[str, Any]:
             422,
         )
 
+    duration = None
     duration_value = (probe.get("format") or {}).get("duration")
     if duration_value in (None, "N/A"):
         duration_value = video_streams[0].get("duration")
 
-    try:
-        duration = float(duration_value)
-    except (TypeError, ValueError) as exc:
+    if duration_value not in (None, "N/A"):
+        try:
+            val = float(duration_value)
+            if val > 0:
+                duration = val
+        except (TypeError, ValueError):
+            pass
+
+    if duration is None:
+        # Check tags (e.g. Matroska/WebM DURATION)
+        tags = {**(probe.get("format") or {}).get("tags", {}), **video_streams[0].get("tags", {})}
+        for k in ("DURATION", "DURATION-eng", "DURATION-und", "duration"):
+            if k in tags:
+                m = re.match(r"^(\d+):(\d+):(\d+(?:\.\d+)?)$", str(tags[k]).strip())
+                if m:
+                    h, mn, s = float(m.group(1)), float(m.group(2)), float(m.group(3))
+                    tot = h * 3600 + mn * 60 + s
+                    if tot > 0:
+                        duration = tot
+                        break
+
+    if duration is None:
+        # Try calculating from frame count and frame rate
+        try:
+            nb = int(video_streams[0].get("nb_frames") or 0)
+            fps_str = video_streams[0].get("avg_frame_rate") or video_streams[0].get("r_frame_rate") or ""
+            if "/" in fps_str:
+                num, den = [float(x) for x in fps_str.split("/")]
+                fps = num / den if den > 0 else 0
+            else:
+                fps = float(fps_str or 0)
+            if nb > 0 and fps > 0:
+                calc_dur = nb / fps
+                if calc_dur > 0:
+                    duration = calc_dur
+        except Exception:
+            pass
+
+    if duration is None:
+        # Fast fallback scan using ffmpeg null sink
+        try:
+            ffmpeg_bin = shutil.which("ffmpeg")
+            if not ffmpeg_bin and os.name == "nt":
+                local_app = os.getenv("LOCALAPPDATA", "")
+                if local_app:
+                    winget_ffmpeg = os.path.join(local_app, "Microsoft", "WinGet", "Links", "ffmpeg.exe")
+                    if os.path.exists(winget_ffmpeg):
+                        ffmpeg_bin = winget_ffmpeg
+            ffmpeg_bin = ffmpeg_bin or "ffmpeg"
+
+            cmd = [ffmpeg_bin, "-hide_banner", "-i", path, "-map", "0:v:0", "-c", "copy", "-f", "null", "-"]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            matches = re.findall(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)", proc.stderr or "")
+            if matches:
+                h, mn, s = [float(x) for x in matches[-1]]
+                tot = h * 3600 + mn * 60 + s
+                if tot > 0:
+                    duration = tot
+        except Exception as exc:
+            LOGGER.debug("ffmpeg fallback probe failed: %s", exc)
+
+    if duration is None or duration <= 0:
+        # OpenCV VideoCapture fallback
+        try:
+            cap = cv2.VideoCapture(path)
+            if cap.isOpened():
+                frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+                fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+                cap.release()
+                if frame_count > 0 and fps > 0:
+                    calc_dur = frame_count / fps
+                    if calc_dur > 0:
+                        duration = calc_dur
+        except Exception:
+            pass
+
+    if duration is None or duration <= 0:
         raise DetectorError(
             "VIDEO_DURATION_UNKNOWN",
             "The video duration could not be determined; analysis was not started.",
-            422,
-        ) from exc
-
-    if duration <= 0:
-        raise DetectorError(
-            "VIDEO_DURATION_UNKNOWN",
-            "The video duration is invalid; analysis was not started.",
             422,
         )
 

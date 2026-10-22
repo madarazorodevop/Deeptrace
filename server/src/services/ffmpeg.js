@@ -30,6 +30,65 @@ async function runMediaCommand(command, args, timeout, label) {
   }
 }
 
+function parseTimecode(str) {
+  if (!str || typeof str !== 'string') return null
+  const match = str.trim().match(/^(\d+):(\d+):(\d+(?:\.\d+)?)$/)
+  if (!match) return null
+  const hours = parseFloat(match[1])
+  const minutes = parseFloat(match[2])
+  const seconds = parseFloat(match[3])
+  const total = hours * 3600 + minutes * 60 + seconds
+  return Number.isFinite(total) && total > 0 ? total : null
+}
+
+async function findVideoDurationFallback(filePath, videoStream, format) {
+  // 1. Check metadata tags
+  const tags = { ...(format?.tags || {}), ...(videoStream?.tags || {}) }
+  for (const key of ['DURATION', 'DURATION-eng', 'DURATION-und', 'duration']) {
+    if (tags[key]) {
+      const parsed = parseTimecode(tags[key])
+      if (parsed) return parsed
+    }
+  }
+
+  // 2. Check nb_frames and frame rate
+  if (videoStream?.nb_frames) {
+    const nb = parseInt(videoStream.nb_frames, 10)
+    const [num, den] = (videoStream.avg_frame_rate || videoStream.r_frame_rate || '30/1').split('/').map(Number)
+    if (den > 0 && num > 0 && nb > 0) {
+      const fps = num / den
+      const dur = nb / fps
+      if (Number.isFinite(dur) && dur > 0) return dur
+    }
+  }
+
+  // 3. Fast stream scan via ffmpeg copy to null
+  try {
+    const { stderr } = await execFileAsync(
+      config.ffmpegPath,
+      ['-hide_banner', '-i', filePath, '-map', '0:v:0', '-c', 'copy', '-f', 'null', '-'],
+      { timeout: 10000, maxBuffer: 2 * 1024 * 1024, windowsHide: true },
+    )
+    const matches = (stderr || '').match(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/g)
+    if (matches && matches.length > 0) {
+      const last = matches[matches.length - 1]
+      const parsed = parseTimecode(last.replace(/^time=/, ''))
+      if (parsed) return parsed
+    }
+  } catch (err) {
+    if (err.stderr) {
+      const matches = err.stderr.match(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/g)
+      if (matches && matches.length > 0) {
+        const last = matches[matches.length - 1]
+        const parsed = parseTimecode(last.replace(/^time=/, ''))
+        if (parsed) return parsed
+      }
+    }
+  }
+
+  return null
+}
+
 export async function probeVideo(filePath) {
   const { stdout } = await runMediaCommand(
     config.ffprobePath,
@@ -60,13 +119,18 @@ export async function probeVideo(filePath) {
   }
 
   const durationValue = probe.format?.duration ?? videoStreams[0].duration
-  const duration = Number(durationValue)
+  let duration = Number(durationValue)
   if (!Number.isFinite(duration) || duration <= 0) {
-    throw httpError(
-      422,
-      'video_duration_unknown',
-      'The video duration could not be determined; analysis was not started.',
-    )
+    const recovered = await findVideoDurationFallback(filePath, videoStreams[0], probe.format)
+    if (recovered && Number.isFinite(recovered) && recovered > 0) {
+      duration = recovered
+    } else {
+      throw httpError(
+        422,
+        'video_duration_unknown',
+        'The video duration could not be determined; analysis was not started.',
+      )
+    }
   }
 
   if (duration > config.maxDurationSec) {

@@ -265,8 +265,9 @@ Smoke tests only. No held-out evaluation has been run. Do not present the sample
 
 ## Contributors
 
-- **Kishore Kumar V** ([@Kishore-kumar-007](https://github.com/Kishore-kumar-007)) — Core Contributor & System Architect (v0.4.0)
+- **Kishore Kumar V** ([@Kishore-kumar-007](https://github.com/Kishore-kumar-007)) — Core Contributor & System Architect (v0.5.0)
   - Designed & implemented Multimodal AI Forensics & Live Web Search Grounding (`webSearchService.js`, `geminiService.js`, `aiOrchestrator.js`)
   - Built expanded Live Camera Studio with Biometric HUD & Recording (`LiveCameraStudio.jsx`)
   - Engineered Executive Forensics UI, AI Grounding Panel, & AI Settings (`AiGroundingPanel.jsx`, `AiSettingsModal.jsx`)
+  - Implemented multi-strategy video duration recovery & streaming WebM frame extraction for unindexed recordings
 
