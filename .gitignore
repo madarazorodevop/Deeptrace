@@ -1,0 +1,59 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Dependencies and builds
+node_modules/
+dist/
+build/
+.vite/
+.cache/
+
+# Runtime data and temporary files
+server/data/
+server/tmp/
+tmp/
+*.tmp
+*.log
+
+# Media samples
+*.mp4
+*.mov
+*.m4v
+*.avi
+*.mkv
+*.webm
+*.wav
+*.mp3
+*.m4a
+*.aac
+*.flac
+*.ogg
+*.opus
+
+# Model weights and local detector artifacts
+*.bin
+*.pt
+*.pth
+*.onnx
+*.safetensors
+*.ckpt
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Tests and coverage
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+
+# Editor and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
