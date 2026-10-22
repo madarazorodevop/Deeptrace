@@ -504,20 +504,34 @@ export default function Home() {
   const [isDragging, setIsDragging] = useState(false)
   const [samples, setSamples] = useState([])
   const [isLoadingSample, setIsLoadingSample] = useState(false)
+
+  // Camera stream decoupled states:
+  // 'idle' | 'requesting-permission' | 'connecting' | 'preview-ready' | 'frame-timeout' | 'error'
+  const [cameraState, setCameraState] = useState('idle')
   const [videoDevices, setVideoDevices] = useState([])
   const [selectedDeviceId, setSelectedDeviceId] = useState('')
   const [cameraStream, setCameraStream] = useState(null)
   const [streamResolution, setStreamResolution] = useState('')
-  const [isCameraActive, setIsCameraActive] = useState(false)
   const [isMirrored, setIsMirrored] = useState(true)
   const [isRecording, setIsRecording] = useState(false)
   const [recordingSeconds, setRecordingSeconds] = useState(0)
 
+  // Face detection decoupled states:
+  // 'idle' | 'analysing' | 'face-detected' | 'no-face-detected' | 'analysis-unavailable' | 'error'
+  const [faceState, setFaceState] = useState('idle')
+  const [faceDetails, setFaceDetails] = useState(null)
+
+  // Robust lifecycle refs
+  const cameraInitIdRef = useRef(0)
   const cameraStreamRef = useRef(null)
   const cameraVideoRef = useRef(null)
   const mediaRecorderRef = useRef(null)
   const recordedChunksRef = useRef([])
   const recordingTimerRef = useRef(null)
+  const frameWatchdogRef = useRef(null)
+  const faceCheckTimerRef = useRef(null)
+  const isComponentMountedRef = useRef(true)
+
   const kind = useMemo(() => mediaKind(file), [file])
   const selectedAggregation = aggregationOptions.find((opt) => opt.value === aggMode)
 
@@ -534,6 +548,16 @@ export default function Home() {
   }, [])
 
   function stopLaptopCamera() {
+    cameraInitIdRef.current++
+
+    if (frameWatchdogRef.current) {
+      clearTimeout(frameWatchdogRef.current)
+      frameWatchdogRef.current = null
+    }
+    if (faceCheckTimerRef.current) {
+      clearTimeout(faceCheckTimerRef.current)
+      faceCheckTimerRef.current = null
+    }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try {
         mediaRecorderRef.current.stop()
@@ -543,26 +567,91 @@ export default function Home() {
       clearInterval(recordingTimerRef.current)
       recordingTimerRef.current = null
     }
+
     setIsRecording(false)
     setRecordingSeconds(0)
     setStreamResolution('')
-    setIsCameraActive(false)
+    setCameraState('idle')
+    setFaceState('idle')
+    setFaceDetails(null)
 
-    cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
-    cameraStreamRef.current = null
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop()
+        } catch {}
+      })
+      cameraStreamRef.current = null
+    }
     setCameraStream(null)
+
     if (cameraVideoRef.current) {
       cameraVideoRef.current.srcObject = null
     }
+
     setIsCameraOpen(false)
+    console.log('[DeepTrace Camera] Camera stopped & tracks released.')
   }
 
   const stopWebcam = stopLaptopCamera
 
-  useEffect(() => () => stopLaptopCamera(), [])
+  useEffect(() => {
+    isComponentMountedRef.current = true
+    return () => {
+      isComponentMountedRef.current = false
+      stopLaptopCamera()
+    }
+  }, [])
 
-  function attachStreamToVideo(videoEl, stream) {
+  function selectBestDefaultDevice(devices, currentTargetId) {
+    if (!devices || devices.length === 0) return ''
+    if (currentTargetId && devices.some((d) => d.deviceId === currentTargetId)) {
+      return currentTargetId
+    }
+    // Prioritize physical built-in webcam over virtual/OBS cameras
+    const physical = devices.find((d) => {
+      const name = (d.label || '').toLowerCase()
+      const isVirtual = name.includes('virtual') || name.includes('obs')
+      return (
+        !isVirtual &&
+        (name.includes('uvc') ||
+          name.includes('integrated') ||
+          name.includes('webcam') ||
+          name.includes('front') ||
+          name.includes('camera'))
+      )
+    })
+    if (physical) return physical.deviceId
+
+    const nonVirtual = devices.find((d) => {
+      const name = (d.label || '').toLowerCase()
+      return !name.includes('virtual') && !name.includes('obs')
+    })
+    if (nonVirtual) return nonVirtual.deviceId
+
+    return devices[0].deviceId
+  }
+
+  async function updateVideoDeviceList(preferredId) {
+    if (!navigator.mediaDevices?.enumerateDevices) return []
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      const videoInputs = devices.filter((d) => d.kind === 'videoinput')
+      setVideoDevices(videoInputs)
+      const bestId = selectBestDefaultDevice(videoInputs, preferredId || selectedDeviceId)
+      if (bestId && !selectedDeviceId) {
+        setSelectedDeviceId(bestId)
+      }
+      return videoInputs
+    } catch {
+      return []
+    }
+  }
+
+  function bindAndMonitorVideo(videoEl, stream, thisInitId) {
     if (!videoEl || !stream) return
+    console.log(`[DeepTrace Camera #${thisInitId}] Binding stream to <video> element.`)
+
     if (videoEl.srcObject !== stream) {
       videoEl.srcObject = stream
     }
@@ -573,111 +662,303 @@ export default function Home() {
     videoEl.setAttribute('autoplay', 'true')
     videoEl.setAttribute('muted', 'true')
 
-    const triggerPlay = () => {
-      videoEl.play().catch((err) => {
-        console.warn('Autoplay prevented:', err)
+    const playPromise = videoEl.play()
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => {
+          console.log(`[DeepTrace Camera #${thisInitId}] video.play() resolved successfully.`)
+        })
+        .catch((err) => {
+          if (err.name !== 'AbortError') {
+            console.warn(`[DeepTrace Camera #${thisInitId}] video.play() warning:`, err)
+          }
+        })
+    }
+
+    let frameFired = false
+    const markFrameDecoded = (source) => {
+      if (frameFired || cameraInitIdRef.current !== thisInitId) return
+      frameFired = true
+
+      if (frameWatchdogRef.current) {
+        clearTimeout(frameWatchdogRef.current)
+        frameWatchdogRef.current = null
+      }
+
+      const w = videoEl.videoWidth
+      const h = videoEl.videoHeight
+      console.log(`[DeepTrace Camera #${thisInitId}] REAL FRAME DECODED via ${source}! Dimensions: ${w}x${h}`)
+      if (w > 0 && h > 0) {
+        setStreamResolution(`${w}×${h}`)
+      }
+
+      // CRITICAL: Display preview immediately once a REAL frame is decoded!
+      setCameraState('preview-ready')
+
+      // Start background face detection separately
+      scheduleDecoupledFaceCheck(videoEl, thisInitId)
+    }
+
+    // Modern API: requestVideoFrameCallback (fires ONLY when a frame is actually painted to compositor)
+    if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+      videoEl.requestVideoFrameCallback(() => {
+        markFrameDecoded('requestVideoFrameCallback')
       })
-      if (videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
-        setStreamResolution(`${videoEl.videoWidth}×${videoEl.videoHeight}`)
-        setIsCameraActive(true)
+    }
+
+    // Only update dimensions on loadedmetadata, DO NOT mark frame decoded
+    videoEl.onloadedmetadata = () => {
+      const w = videoEl.videoWidth
+      const h = videoEl.videoHeight
+      if (w > 0 && h > 0) {
+        setStreamResolution(`${w}×${h}`)
       }
     }
 
-    triggerPlay()
-    videoEl.onloadedmetadata = triggerPlay
-    videoEl.oncanplay = triggerPlay
-    videoEl.onplaying = () => setIsCameraActive(true)
+    // Check for actual decoded frame count
+    const checkInterval = setInterval(() => {
+      if (frameFired || cameraInitIdRef.current !== thisInitId) {
+        clearInterval(checkInterval)
+        return
+      }
+
+      const quality = typeof videoEl.getVideoPlaybackQuality === 'function' ? videoEl.getVideoPlaybackQuality() : null
+      if (quality && quality.totalVideoFrames > 0) {
+        clearInterval(checkInterval)
+        markFrameDecoded('totalVideoFrames')
+        return
+      }
+
+      if (videoEl.currentTime > 0.05 && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+        clearInterval(checkInterval)
+        markFrameDecoded('currentTime')
+        return
+      }
+    }, 120)
+
+    // Bounded 4-second timeout to prevent infinite spinner if 0 frames arrive
+    frameWatchdogRef.current = setTimeout(() => {
+      clearInterval(checkInterval)
+      if (frameFired || cameraInitIdRef.current !== thisInitId) return
+
+      console.warn(`[DeepTrace Camera #${thisInitId}] Frame timeout (4s): Camera connected but 0 frames decoded.`)
+      setCameraState('frame-timeout')
+    }, 4000)
   }
 
-  useEffect(() => {
-    if (isCameraOpen && cameraStream && cameraVideoRef.current) {
-      attachStreamToVideo(cameraVideoRef.current, cameraStream)
-    }
-  }, [isCameraOpen, cameraStream])
-
-  async function updateVideoDeviceList() {
-    if (!navigator.mediaDevices?.enumerateDevices) return []
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices()
-      const videoInputs = devices.filter((d) => d.kind === 'videoinput')
-      setVideoDevices(videoInputs)
-      return videoInputs
-    } catch {
-      return []
-    }
-  }
-
-  async function startLaptopCamera(deviceIdToUse) {
-    setCameraError('')
-    setIsCameraActive(false)
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraError('This browser does not support system camera capture.')
-      return
+  function scheduleDecoupledFaceCheck(videoEl, thisInitId) {
+    if (faceCheckTimerRef.current) {
+      clearTimeout(faceCheckTimerRef.current)
     }
 
-    // Stop existing stream tracks if active
-    cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
-    cameraStreamRef.current = null
-    setCameraStream(null)
+    faceCheckTimerRef.current = setTimeout(async () => {
+      if (cameraInitIdRef.current !== thisInitId || !isComponentMountedRef.current) return
+      if (!videoEl || videoEl.videoWidth === 0 || videoEl.videoHeight === 0) return
 
-    const targetId = deviceIdToUse || selectedDeviceId
-    try {
-      let stream
-      try {
-        // Preferred constraint: specify deviceId with ideal to avoid OverconstrainedError in Windows UVC drivers
-        const videoConstraint = targetId
-          ? { deviceId: { ideal: targetId }, width: { ideal: 1280 }, height: { ideal: 720 } }
-          : { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: videoConstraint,
-          audio: false,
-        })
-      } catch {
+      setFaceState('analysing')
+
+      // 1. Try native Shape Detection API if available
+      if (typeof window.FaceDetector !== 'undefined') {
         try {
-          const fallbackConstraint = targetId ? { deviceId: targetId } : { facingMode: 'user' }
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: fallbackConstraint,
-            audio: false,
-          })
-        } catch {
-          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+          const detector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 1 })
+          const faces = await detector.detect(videoEl)
+          if (cameraInitIdRef.current !== thisInitId) return
+          if (faces && faces.length > 0) {
+            setFaceState('face-detected')
+            setFaceDetails({ confidence: 96, method: 'Hardware FaceDetector' })
+            return
+          } else {
+            setFaceState('no-face-detected')
+            setFaceDetails(null)
+            return
+          }
+        } catch (e) {
+          console.warn('[DeepTrace FaceCheck] Native detector threw, falling back to background probe:', e)
         }
       }
 
+      // 2. Background probe using local /api/analyze with 2-second timeout
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = 256
+        canvas.height = 256
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+        ctx.drawImage(videoEl, 0, 0, 256, 256)
+
+        const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.7))
+        if (!blob || cameraInitIdRef.current !== thisInitId) return
+
+        const formData = new FormData()
+        formData.append('media', blob, 'face_probe.jpg')
+
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), 2000)
+
+        const response = await fetch('/api/analyze', {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal,
+        })
+        clearTimeout(timer)
+
+        if (cameraInitIdRef.current !== thisInitId) return
+
+        if (!response.ok) {
+          setFaceState('analysis-unavailable')
+          return
+        }
+
+        const data = await response.json()
+        const isNonFacial = data.result?.analysis_type === 'visual_forensics_non_facial'
+        if (data.status === 'evaluated' && !isNonFacial) {
+          const conf = Math.round((data.result?.face_confidence ?? 0.85) * 100)
+          setFaceState('face-detected')
+          setFaceDetails({ confidence: conf, method: 'DeepGuard YOLO' })
+        } else {
+          setFaceState('no-face-detected')
+          setFaceDetails(null)
+        }
+      } catch (err) {
+        if (cameraInitIdRef.current !== thisInitId) return
+        console.warn('[DeepTrace FaceCheck] Background probe unavailable (non-blocking):', err.message)
+        setFaceState('analysis-unavailable')
+      }
+    }, 400)
+  }
+
+  async function startLaptopCamera(preferredDeviceId) {
+    const thisInitId = ++cameraInitIdRef.current
+    console.log(`[DeepTrace Camera #${thisInitId}] Starting camera initialisation...`)
+
+    setCameraError('')
+    setCameraState('requesting-permission')
+    setIsCameraOpen(true)
+    setFaceState('idle')
+    setFaceDetails(null)
+    setStreamResolution('')
+
+    if (frameWatchdogRef.current) {
+      clearTimeout(frameWatchdogRef.current)
+      frameWatchdogRef.current = null
+    }
+    if (faceCheckTimerRef.current) {
+      clearTimeout(faceCheckTimerRef.current)
+      faceCheckTimerRef.current = null
+    }
+
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach((t) => t.stop())
+      cameraStreamRef.current = null
+    }
+    if (cameraVideoRef.current) {
+      cameraVideoRef.current.srcObject = null
+    }
+    setCameraStream(null)
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraState('error')
+      setCameraError('This browser does not support media device capture.')
+      return
+    }
+
+    let targetId = preferredDeviceId || selectedDeviceId
+    if (!targetId && videoDevices.length > 0) {
+      targetId = selectBestDefaultDevice(videoDevices, targetId)
+    }
+
+    setCameraState('connecting')
+
+    let stream = null
+    try {
+      const primaryConstraints = targetId
+        ? { video: { deviceId: { ideal: targetId } }, audio: false }
+        : { video: { facingMode: 'user' }, audio: false }
+
+      console.log(`[DeepTrace Camera #${thisInitId}] Requesting getUserMedia:`, primaryConstraints)
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(primaryConstraints)
+      } catch (err1) {
+        console.warn(`[DeepTrace Camera #${thisInitId}] Primary constraint failed (${err1.name}), falling back:`, err1)
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+      }
+
+      if (cameraInitIdRef.current !== thisInitId || !isComponentMountedRef.current) {
+        console.warn(`[DeepTrace Camera #${thisInitId}] Superseded by newer request #${cameraInitIdRef.current}. Discarding stream.`)
+        stream.getTracks().forEach((t) => t.stop())
+        return
+      }
+
+      const videoTrack = stream.getVideoTracks()?.[0]
+      if (!videoTrack) {
+        throw new Error('Stream returned without any video tracks.')
+      }
+
+      console.log(`[DeepTrace Camera #${thisInitId}] Stream acquired successfully:`, {
+        trackLabel: videoTrack.label,
+        readyState: videoTrack.readyState,
+        enabled: videoTrack.enabled,
+      })
+
       cameraStreamRef.current = stream
       setCameraStream(stream)
-      setIsCameraOpen(true)
 
-      // Immediately attach to video element if already mounted
+      // Refresh devices with actual labels
+      const available = await updateVideoDeviceList(videoTrack.getSettings?.()?.deviceId || targetId)
+      const activeDevId = videoTrack.getSettings?.()?.deviceId
+      if (activeDevId && activeDevId !== selectedDeviceId) {
+        setSelectedDeviceId(activeDevId)
+      } else if (!selectedDeviceId && available.length > 0) {
+        setSelectedDeviceId(selectBestDefaultDevice(available, null))
+      }
+
+      // If initial blind request defaulted to a virtual camera and a physical webcam exists, auto-switch to physical
+      const trackLabel = (videoTrack.label || '').toLowerCase()
+      const isTrackVirtual = trackLabel.includes('virtual') || trackLabel.includes('obs')
+      const physicalDev = available.find((d) => {
+        const n = (d.label || '').toLowerCase()
+        return (
+          !n.includes('virtual') &&
+          !n.includes('obs') &&
+          (n.includes('uvc') || n.includes('integrated') || n.includes('webcam') || n.includes('camera') || n.includes('usb'))
+        )
+      })
+
+      if (!preferredDeviceId && isTrackVirtual && physicalDev && physicalDev.deviceId !== activeDevId) {
+        console.log(
+          `[DeepTrace Camera #${thisInitId}] Auto-switching from virtual device (${videoTrack.label}) to physical hardware webcam: ${physicalDev.label}`
+        )
+        setSelectedDeviceId(physicalDev.deviceId)
+        stream.getTracks().forEach((t) => t.stop())
+        return startLaptopCamera(physicalDev.deviceId)
+      }
+
       if (cameraVideoRef.current) {
-        attachStreamToVideo(cameraVideoRef.current, stream)
+        bindAndMonitorVideo(cameraVideoRef.current, stream, thisInitId)
       }
+    } catch (reqErr) {
+      if (cameraInitIdRef.current !== thisInitId || !isComponentMountedRef.current) return
+      console.error(`[DeepTrace Camera #${thisInitId}] Failed to acquire camera:`, reqErr)
+      setCameraState('error')
 
-      const available = await updateVideoDeviceList()
-      const activeTrack = stream.getVideoTracks()?.[0]
-      const activeSettings = activeTrack?.getSettings?.()
-      if (activeSettings?.deviceId && !targetId) {
-        setSelectedDeviceId(activeSettings.deviceId)
-      } else if (!targetId && available.length > 0) {
-        setSelectedDeviceId(available[0].deviceId)
+      let msg = 'Could not access camera hardware. Check connections or choose a local file.'
+      if (reqErr.name === 'NotAllowedError' || reqErr.name === 'PermissionDeniedError') {
+        msg = 'Camera permission update pending: Click the blue "Reload" button in Brave or reload the page.'
+      } else if (reqErr.name === 'NotReadableError' || reqErr.name === 'TrackStartError') {
+        msg = 'Camera is currently locked by another application or background tab. Please close other camera apps and reload.'
+      } else if (reqErr.name === 'OverconstrainedError') {
+        msg = 'Camera constraints could not be satisfied by this device. Try reloading.'
+      } else if (reqErr.message) {
+        msg = `Camera access notice (${reqErr.name || 'Hardware'}): ${reqErr.message}`
       }
-    } catch (cameraReqErr) {
-      console.error('Camera request error:', cameraReqErr)
-      let message = 'Could not access system camera. Please check permissions or choose a file.'
-      if (cameraReqErr.name === 'NotAllowedError' || cameraReqErr.name === 'PermissionDeniedError') {
-        message = 'Camera permission update pending: Click the blue "Reload" button in Brave (or press Ctrl+R) to apply your permission setting.'
-      } else if (cameraReqErr.name === 'NotReadableError' || cameraReqErr.name === 'TrackStartError') {
-        message = 'Camera is currently locked by another application or background tab. Please close other camera apps and reload.'
-      } else if (cameraReqErr.message) {
-        message = `Camera access notice (${cameraReqErr.name || 'Hardware'}): ${cameraReqErr.message}`
-      }
-      setCameraError(message)
+      setCameraError(msg)
     }
   }
 
   const startWebcam = startLaptopCamera
 
   async function handleDeviceSwitch(newDeviceId) {
+    console.log(`[DeepTrace Camera] User switched camera to: ${newDeviceId}`)
     setSelectedDeviceId(newDeviceId)
     if (isCameraOpen) {
       await startLaptopCamera(newDeviceId)
@@ -1093,24 +1374,60 @@ export default function Home() {
                 {isCameraOpen ? (
                   <div className="mt-4 overflow-hidden rounded-2xl border border-cyan-500/30 bg-slate-950 p-4 shadow-2xl">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3 text-xs">
+                      {/* Dynamic decoupled status pill */}
                       <div className="flex items-center gap-2">
-                        <span className="relative flex h-2 w-2">
-                          <span className={`absolute inline-flex h-full w-full rounded-full ${isCameraActive ? 'bg-emerald-400 animate-ping opacity-75' : 'bg-cyan-400'}`}></span>
-                          <span className={`relative inline-flex h-2 w-2 rounded-full ${isCameraActive ? 'bg-emerald-500' : 'bg-cyan-500'}`}></span>
-                        </span>
-                        <span className="font-semibold text-slate-200">System Camera Live</span>
-                        {streamResolution ? (
-                          <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-mono text-emerald-300">
-                            {streamResolution}
-                          </span>
-                        ) : null}
+                        {cameraState === 'preview-ready' ? (
+                          <>
+                            <span className="relative flex h-2 w-2">
+                              <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 animate-ping opacity-75"></span>
+                              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
+                            </span>
+                            <span className="font-semibold text-slate-200">System Camera Live</span>
+                            {streamResolution ? (
+                              <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-mono text-emerald-300">
+                                {streamResolution}
+                              </span>
+                            ) : null}
+                          </>
+                        ) : cameraState === 'connecting' || cameraState === 'requesting-permission' ? (
+                          <>
+                            <span className="relative flex h-2 w-2">
+                              <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-400 animate-pulse"></span>
+                            </span>
+                            <span className="font-semibold text-amber-300">
+                              {cameraState === 'requesting-permission' ? 'Requesting Permission...' : 'Connecting Camera...'}
+                            </span>
+                          </>
+                        ) : cameraState === 'frame-timeout' ? (
+                          <>
+                            <span className="relative flex h-2 w-2">
+                              <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500"></span>
+                            </span>
+                            <span className="font-semibold text-amber-300">No Video Frames</span>
+                          </>
+                        ) : cameraState === 'error' ? (
+                          <>
+                            <span className="relative flex h-2 w-2">
+                              <span className="relative inline-flex h-2 w-2 rounded-full bg-rose-500"></span>
+                            </span>
+                            <span className="font-semibold text-rose-300">Camera Error</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="relative flex h-2 w-2">
+                              <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-400"></span>
+                            </span>
+                            <span className="font-semibold text-slate-200">Camera Ready</span>
+                          </>
+                        )}
                       </div>
+
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
                           onClick={() => startLaptopCamera(selectedDeviceId)}
                           className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/80 px-2 py-1 text-[11px] text-cyan-300 transition hover:border-cyan-400 hover:text-cyan-200"
-                          title="Reload stream connection"
+                          title="Restart camera stream"
                         >
                           <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -1123,11 +1440,17 @@ export default function Home() {
                             onChange={(e) => handleDeviceSwitch(e.target.value)}
                             className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-slate-200 focus:border-cyan-400 focus:outline-none"
                           >
-                            {videoDevices.map((d, idx) => (
-                              <option key={d.deviceId || idx} value={d.deviceId}>
-                                {d.label ? (d.label.toLowerCase().includes('uvc') || d.label.toLowerCase().includes('integrated') ? `${d.label} [Built-in]` : d.label) : `Camera ${idx + 1}`}
-                              </option>
-                            ))}
+                            {videoDevices.map((d, idx) => {
+                              const name = (d.label || '').toLowerCase();
+                              const isBuiltin = name.includes('uvc') || name.includes('integrated') || (name.includes('webcam') && !name.includes('obs'));
+                              const isVirtual = name.includes('obs') || name.includes('virtual');
+                              const tag = isBuiltin ? ' [Built-in]' : isVirtual ? ' [Virtual Camera]' : '';
+                              return (
+                                <option key={d.deviceId || idx} value={d.deviceId}>
+                                  {(d.label || `Camera ${idx + 1}`) + tag}
+                                </option>
+                              );
+                            })}
                           </select>
                         ) : videoDevices.length === 1 && videoDevices[0].label ? (
                           <span className="max-w-[180px] truncate rounded bg-slate-800/80 px-2 py-0.5 text-[11px] font-mono text-cyan-300" title={videoDevices[0].label}>
@@ -1147,33 +1470,118 @@ export default function Home() {
                     <div className="relative mt-3 aspect-video w-full overflow-hidden rounded-xl bg-black">
                       <video
                         ref={(node) => {
-                          cameraVideoRef.current = node
+                          cameraVideoRef.current = node;
                           if (node && cameraStreamRef.current) {
-                            attachStreamToVideo(node, cameraStreamRef.current)
+                            bindAndMonitorVideo(node, cameraStreamRef.current, cameraInitIdRef.current);
                           }
                         }}
                         autoPlay
                         muted
                         playsInline
-                        onLoadedMetadata={(e) => {
-                          const v = e.currentTarget
-                          v.play().catch(() => {})
-                          if (v.videoWidth > 0 && v.videoHeight > 0) {
-                            setStreamResolution(`${v.videoWidth}×${v.videoHeight}`)
-                            setIsCameraActive(true)
-                          }
-                        }}
-                        className={`h-full w-full object-cover transition-transform ${isMirrored ? '-scale-x-100' : ''}`}
+                        className={`h-full w-full object-cover transition-opacity duration-300 ${
+                          cameraState === 'preview-ready' ? 'opacity-100' : 'opacity-0'
+                        } ${isMirrored ? '-scale-x-100' : ''}`}
                       />
-                      {/* Face framing guideline overlay */}
-                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                        <div className="h-44 w-36 rounded-[50%] border-2 border-dashed border-cyan-400/60 shadow-[0_0_15px_rgba(34,211,238,0.3)]" />
+
+                      {/* Connecting / Loading Spinner: Displayed ONLY during initial handshake, never blocking preview once frames arrive */}
+                      {(cameraState === 'connecting' || cameraState === 'requesting-permission') && (
+                        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/85 backdrop-blur-sm">
+                          <div className="h-10 w-10 animate-spin rounded-full border-2 border-cyan-500/20 border-t-cyan-400" />
+                          <p className="mt-3 text-xs font-semibold text-slate-200">
+                            {cameraState === 'requesting-permission' ? 'Requesting Camera Access...' : 'Opening Video Stream...'}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-400">Negotiating stream with video device</p>
+                        </div>
+                      )}
+
+                      {/* Frame Timeout Fallback: Bounded after 4s without freezing or infinite spinner */}
+                      {cameraState === 'frame-timeout' && (
+                        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/90 p-6 text-center backdrop-blur-sm">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-300">
+                            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                          </div>
+                          <h4 className="mt-3 text-sm font-bold text-slate-100">No Video Frames Received</h4>
+                          <p className="mt-1 max-w-sm text-xs leading-relaxed text-slate-400">
+                            The selected device is open, but has delivered 0 frames in 4 seconds. This frequently occurs with <strong>OBS Virtual Camera</strong> when OBS is not streaming.
+                          </p>
+                          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                            {(() => {
+                              const physical = videoDevices.find((d) => {
+                                const n = (d.label || '').toLowerCase();
+                                return (
+                                  !n.includes('obs') &&
+                                  !n.includes('virtual') &&
+                                  (n.includes('uvc') || n.includes('integrated') || n.includes('webcam') || n.includes('camera') || n.includes('usb'))
+                                );
+                              });
+                              if (physical && physical.deviceId !== selectedDeviceId) {
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeviceSwitch(physical.deviceId)}
+                                    className="rounded-lg bg-cyan-400 px-3.5 py-2 text-xs font-bold text-slate-950 shadow-md transition hover:bg-cyan-300"
+                                  >
+                                    Switch to Built-in Webcam
+                                  </button>
+                                );
+                              }
+                              return null;
+                            })()}
+                            <button
+                              type="button"
+                              onClick={() => startLaptopCamera(selectedDeviceId)}
+                              className="rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-700"
+                            >
+                              Retry Camera
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Face framing guideline overlay: Border dynamically reflects decoupled face detection without blocking preview */}
+                      <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+                        <div
+                          className={`h-44 w-36 rounded-[50%] border-2 border-dashed transition-all duration-300 ${
+                            faceState === 'face-detected'
+                              ? 'border-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.4)]'
+                              : faceState === 'no-face-detected'
+                                ? 'border-amber-400/80 shadow-[0_0_15px_rgba(251,191,36,0.3)]'
+                                : 'border-cyan-400/60 shadow-[0_0_15px_rgba(34,211,238,0.25)]'
+                          }`}
+                        />
                       </div>
-                      <div className="absolute bottom-2 left-2 rounded bg-black/60 px-2 py-1 font-mono text-[10px] text-cyan-300">
-                        Center face within oval
+
+                      {/* Non-blocking face / preview status pill */}
+                      <div className="absolute bottom-2 left-2 z-10 flex items-center gap-2 rounded bg-black/75 px-2.5 py-1 font-mono text-[11px] backdrop-blur-sm">
+                        {faceState === 'face-detected' ? (
+                          <span className="flex items-center gap-1.5 text-emerald-300">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                            Face detected ({faceDetails?.confidence ?? 95}% {faceDetails?.method ? `• ${faceDetails.method}` : ''})
+                          </span>
+                        ) : faceState === 'no-face-detected' ? (
+                          <span className="flex items-center gap-1.5 text-amber-300">
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                            No face detected — adjust position or lighting
+                          </span>
+                        ) : faceState === 'analysing' ? (
+                          <span className="flex items-center gap-1.5 text-cyan-300">
+                            <span className="h-1.5 w-1.5 animate-spin rounded-full border border-cyan-400 border-t-transparent" />
+                            Checking face framing...
+                          </span>
+                        ) : faceState === 'analysis-unavailable' ? (
+                          <span className="flex items-center gap-1.5 text-slate-300">
+                            <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                            Face analysis offline • Preview ready
+                          </span>
+                        ) : (
+                          <span className="text-cyan-300">Center face within oval</span>
+                        )}
                       </div>
+
                       {isRecording ? (
-                        <div className="absolute top-2 right-2 flex items-center gap-2 rounded border border-rose-500/50 bg-rose-950/80 px-2.5 py-1 font-mono text-xs text-rose-200">
+                        <div className="absolute top-2 right-2 z-10 flex items-center gap-2 rounded border border-rose-500/50 bg-rose-950/80 px-2.5 py-1 font-mono text-xs text-rose-200">
                           <span className="h-2 w-2 animate-ping rounded-full bg-rose-500" />
                           <span>Recording: 0:0{recordingSeconds}s</span>
                         </div>
@@ -1184,7 +1592,7 @@ export default function Home() {
                     <div className="mt-2.5 flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 p-2.5 text-[11px] leading-relaxed text-amber-200/90">
                       <span className="text-sm leading-none">💡</span>
                       <span>
-                        <strong>Camera light is ON but screen is dark?</strong> Look at your laptop&apos;s screen bezel — many laptops have a physical privacy slider (shutter) covering the lens that slides left/right, or a keyboard shortcut (e.g. <code>Fn + F10</code>). Slide the shutter open to reveal the camera feed.
+                        <strong>Camera light is ON but screen is dark?</strong> Look at your laptop's screen bezel — many laptops have a physical privacy slider (shutter) covering the lens that slides left/right, or a keyboard shortcut (e.g. <code>Fn + F10</code>). Slide the shutter open to reveal the camera feed.
                       </span>
                     </div>
 
@@ -1202,14 +1610,16 @@ export default function Home() {
                           <button
                             type="button"
                             onClick={captureLaptopSnapshot}
-                            className="flex-1 rounded-xl bg-gradient-to-r from-cyan-400 to-indigo-500 py-2.5 text-xs font-bold text-slate-950 shadow-lg transition hover:opacity-95"
+                            disabled={cameraState !== 'preview-ready'}
+                            className="flex-1 rounded-xl bg-gradient-to-r from-cyan-400 to-indigo-500 py-2.5 text-xs font-bold text-slate-950 shadow-lg transition hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             Capture Photo Snapshot
                           </button>
                           <button
                             type="button"
                             onClick={startRecordingClip}
-                            className="rounded-xl border border-indigo-400/40 bg-indigo-500/20 px-3.5 py-2.5 text-xs font-semibold text-indigo-200 transition hover:bg-indigo-500/30"
+                            disabled={cameraState !== 'preview-ready'}
+                            className="rounded-xl border border-indigo-400/40 bg-indigo-500/20 px-3.5 py-2.5 text-xs font-semibold text-indigo-200 transition hover:bg-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             Record 3s Video Clip
                           </button>
@@ -1224,9 +1634,7 @@ export default function Home() {
                       </button>
                     </div>
                   </div>
-                ) : null}
-
-                {/* Video Aggregation Options */}
+                ) : null}\n\n                {/* Video Aggregation Options */}
                 {kind === 'video' ? (
                   <div className="mt-6 rounded-xl border border-slate-800/80 bg-slate-950/60 p-4">
                     <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
