@@ -1541,19 +1541,19 @@ export default function Home() {
     <div className="relative min-h-screen bg-[#030712] text-slate-100 selection:bg-cyan-500 selection:text-black">
       {/* Immersive Cyber Forensic Ambient Background */}
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
-        {/* High-res Cybernetic Neural Mesh Wallpaper */}
+        {/* Sleek Fluid Obsidian & Neon Rim-lit Wallpaper */}
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-40 mix-blend-screen scale-[1.02] transform transition-transform duration-1000"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-55 scale-[1.01] transform transition-transform duration-1000"
           style={{ backgroundImage: `url('/images/deep-forensic-bg.jpg')` }}
         />
-        {/* Dual-layer Ambient Vignette & Gradient Overlays for High Legibility */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#030712]/65 via-[#030712]/45 to-[#030712]/85" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_30%,_#030712_85%)]" />
+        {/* Soft Vignette & Atmospheric Gradient Overlays */}
+        <div className="absolute inset-0 bg-gradient-to-b from-[#030712]/50 via-[#030712]/40 to-[#030712]/80" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_35%,_#030712_88%)]" />
 
         {/* Ambient dynamic glow orbs for dimensional depth */}
-        <div className="absolute -top-40 left-1/4 h-[550px] w-[550px] rounded-full bg-cyan-500/15 blur-[140px]" />
-        <div className="absolute top-1/3 -right-40 h-[650px] w-[650px] rounded-full bg-indigo-500/15 blur-[160px]" />
-        <div className="absolute -bottom-40 left-1/3 h-[500px] w-[500px] rounded-full bg-purple-500/15 blur-[150px]" />
+        <div className="absolute -top-40 left-1/4 h-[550px] w-[550px] rounded-full bg-cyan-500/10 blur-[140px]" />
+        <div className="absolute top-1/3 -right-40 h-[650px] w-[650px] rounded-full bg-indigo-500/10 blur-[160px]" />
+        <div className="absolute -bottom-40 left-1/3 h-[500px] w-[500px] rounded-full bg-purple-500/10 blur-[150px]" />
       </div>
 
       <div className="relative mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-6 sm:px-8">
