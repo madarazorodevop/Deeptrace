@@ -299,6 +299,15 @@ npm run build
 
 ## Contributors
 
+- **madarazorodevop** ([@madarazorodevop](https://github.com/madarazorodevop)) — Project Owner & Lead Maintainer
+  - Project conception, core vision, repository architecture, and specifications
+  - Technical requirements, pipeline review, and overall release orchestration
+
+- **Nandhakumar** ([@NANDHAKUMAR-360](https://github.com/NANDHAKUMAR-360)) — Core Contributor & Full-Stack Developer
+  - Scaffolding and setup of DeepTrace client, Express server, and initial microservices architecture
+  - Integration of DeepGuard neural detector pipeline and early visual forensics engine
+  - Laptop system camera integration, preview stabilization, and face detection decoupling
+
 - **Kishore Kumar V** ([@Kishore-kumar-007](https://github.com/Kishore-kumar-007)) — Core Contributor & System Architect (v0.7.0 PRO)
   - Designed & engineered Multimodal AI Forensics & Live Web Search Grounding (`webSearchService.js`, `geminiService.js`, `aiOrchestrator.js`)
   - Engineered Live Camera Studio with Biometric HUD & Clip Recording (`LiveCameraStudio.jsx`)
